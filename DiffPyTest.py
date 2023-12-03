@@ -165,7 +165,8 @@ class DifferentialForm:
         
 
     def __str__(self):
-        '+'.join(['^'.join([str(self.forms_list[i][j]) for j in range(len(self.forms_list[i]))]) for i in range(len(self.forms_list))])
+        # return '+'.join(['^'.join([str(self.forms_list[i][j]) for j in range(len(self.forms_list[i]))]) for i in range(len(self.forms_list))])
+        
 
     def _repr_latex_(self):
         latex_str = "$" + '+'.join([ "(" + str(self.factors_list[i]) + ")" + r' \wedge '.join([str(self.forms_list[i][j]) for j in range(len(self.forms_list[i]))]) for i in range(len(self.forms_list))]) + "$"
