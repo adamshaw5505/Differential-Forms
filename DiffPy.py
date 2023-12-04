@@ -179,7 +179,6 @@ class DifferentialFormMul():
             deled = False
             for j in range(len(self.forms_list[i])):
                 if self.forms_list[i][j].degree %2 == 1:
-                    print([k for k,e in enumerate(self.forms_list[i]) if e == self.forms_list[i][j]])
                     if len([k for k,e in enumerate(self.forms_list[i]) if e == self.forms_list[i][j]]) > 1:
                         del self.forms_list[i]
                         del self.factors[i]
