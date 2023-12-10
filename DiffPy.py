@@ -1,13 +1,18 @@
-from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr
+from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols
+import numbers
+MAX_DEGREE = 4
+
+def set_max_degree(max_degree: int):
+    MAX_DEGREE=max_degree
 
 class DifferentialForm:
-    def __init__(self,symbol,degree=0,max_degree=4, exact=False):
-        assert degree >= 0
-        assert degree <= max_degree
-        self.max_degree = degree
+    def __init__(self,symbol,degree=0, exact=False):
         self.degree = degree
         self.symbol = symbol
         self.exact = exact
+        if degree < 0 or degree > MAX_DEGREE:
+            self.symbol = Number(0)
+        
 
     def __mul__(self,other):
         if isinstance(other,AtomicExpr):
@@ -72,17 +77,29 @@ class DifferentialForm:
 
     def _repr_latex_(self):
         return self.symbol._repr_latex_()
+    
+    def __eq__(self,other):
+        if isinstance(other,DifferentialForm):
+            return str(self.symbol) == str(other.symbol) and self.degree == other.degree
+    
+    @property
+    def d(self):
+        if self.exact: return DifferentialForm(Number(0),self.degree+1,exact=True)
+        elif isinstance(self.symbol,Number): return DifferentialForm(Number(0),self.degree+1,exact=True)
+        else:
+            dsymbol = symbols("d"+str(self.symbol))
+            return DifferentialForm(dsymbol,degree=self.degree+1,exact=True)
+        raise NotImplementedError
+
 
 class DifferentialFormMul():
     def __init__(self,form:DifferentialForm=None,factor:AtomicExpr=None):
         if form == None:
             self.forms_list = []
             self.factors = []
-            self.max_degree = 4
         else:
             self.forms_list = [[form]]
             self.factors = [factor]
-            self.max_degree = form.max_degree
     
     def __add__(self,other):
         ret = DifferentialFormMul()
@@ -98,13 +115,13 @@ class DifferentialFormMul():
             ret.forms_list += self.forms_list
             ret.factors += self.factors
             if isinstance(other.symbol,Number):
-                ret.forms_list += [[DifferentialForm(Number(1),0)]]
+                ret.forms_list += [[DifferentialForm(Number(1),0,exact=True)]]
                 ret.factors += [other.symbol]
             elif isinstance(other.symbol,Expr):
-                ret.forms_list += [[DifferentialForm(Number(1),0)]]
+                ret.forms_list += [[DifferentialForm(Number(1),0,exact=True)]]
                 ret.factors += [other.symbol]
             elif isinstance(other.symbol,AtomicExpr):
-                ret.forms_list += [[DifferentialForm(Number(1),0)]]
+                ret.forms_list += [[DifferentialForm(Number(1),0,exact=True)]]
                 ret.factors += [other.symbol]
             else:
                 ret.forms_list += [[other]]
@@ -148,6 +165,7 @@ class DifferentialFormMul():
             ret.__remove_above_top()
             ret.__sort_form_sums()
             ret.__collect_forms()
+        
         elif isinstance(other,DifferentialFormMul):
             for i in range(len(self.forms_list)):
                 for j in range(len(other.forms_list)):
@@ -161,6 +179,56 @@ class DifferentialFormMul():
         else:
             raise NotImplementedError
         
+        ret.__remove_squares()
+        ret.__remove_above_top()
+        ret.__sort_form_sums()
+        ret.__collect_forms()
+
+        return ret
+    
+    def __rmul__(self,other):
+        ret = DifferentialFormMul()
+        if isinstance(other,int):
+            ret.forms_list = self.forms_list
+            ret.factors = [Integer(other)*f for f in self.factors]
+
+        elif isinstance(other,float):
+            ret.forms_list = self.forms_list
+            ret.factors = [Rational(other)*f for f in self.factors]
+
+        elif isinstance(other,AtomicExpr):
+            ret.forms_list = self.forms_list
+            ret.factors = [(other)*f for f in self.factors]
+
+        elif isinstance(other,Expr):
+            ret.forms_list = self.forms_list
+            ret.factors = [(other)*f for f in self.factors]            
+
+        elif isinstance(other,DifferentialForm):
+            ret.forms_list = [[other]+fl for fl in self.forms_list]
+            ret.factors = self.factors
+
+            ret.__remove_squares()
+            ret.__remove_above_top()
+            ret.__sort_form_sums()
+            ret.__collect_forms()
+        elif isinstance(other,DifferentialFormMul):
+            for i in range(len(self.forms_list)):
+                for j in range(len(other.forms_list)):
+                    ret.forms_list.append(other.forms_list[j]+self.forms_list[i])
+                    ret.factors.append(self.factors[i]*other.factors[j])
+
+            ret.__remove_squares()
+            ret.__remove_above_top()
+            ret.__sort_form_sums()
+            ret.__collect_forms()
+        else:
+            raise NotImplementedError
+        
+            ret.__remove_squares()
+            ret.__remove_above_top()
+            ret.__sort_form_sums()
+            ret.__collect_forms()
         return ret
 
     def __radd__(self,other): return self + other
@@ -189,7 +257,7 @@ class DifferentialFormMul():
     def __remove_above_top(self):
         i = 0
         while i < len(self.forms_list):
-            if sum([f.max_degree for f in self.forms_list[i]]) > self.max_degree:
+            if sum([f.degree for f in self.forms_list[i]]) > MAX_DEGREE:
                 del self.forms_list[i]
                 del self.factors[i]
                 continue
@@ -225,16 +293,75 @@ class DifferentialFormMul():
                 del new_forms_list[i]
                 continue
             i+=1
-        
+    
+        i = 0
+        while i < len(new_forms_list):
+            new_forms_strings = [str(f) for f in new_forms_list[i]]
+            if '0' in new_forms_strings:
+                del new_forms_list[i]
+                del new_factors[i]
+                continue
+            if len(new_forms_list[i]) > 1 and '1' in new_forms_strings:
+                new_forms_list[i].pop(new_forms_strings.index('1'))
+            i+=1
+
+
+
+
         self.forms_list = new_forms_list
         self.factors = new_factors
             
     def _repr_latex_(self):
-        latex_str = "$" + "+".join([ "(" + latex(self.factors[i]) + ")" + r"\wedge".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))]) + "$"
+        latex_str = "$" + "+".join([ "(" + latex(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))]) + "$"
         if latex_str == "$$":
             return "$0$"
         return latex_str
     
+    @property
+    def d(self):
+        ret = DifferentialFormMul()
+        new_forms_list = []
+        new_factors_list = []
+        for i in range(len(self.forms_list)):
+            fact = self.factors[i]
+            for f in fact.free_symbols:
+                dfact = fact.diff(f)
+                if dfact != 0:
+                    new_forms_list += [[DifferentialForm(f,0).d] + self.forms_list[i]]
+                    new_factors_list += [dfact]
+            for j in range(len(self.forms_list[i])):
+                d_factor = (-1)**sum([0] + [f.degree for f in self.forms_list[i][0:j]])
+                new_forms_list += [self.forms_list[i][0:j] + [self.forms_list[i][j].d] + self.forms_list[i][j+1:]]
+                new_factors_list += [d_factor*self.factors[i]]
 
+        ret.forms_list = new_forms_list
+        ret.factors = new_factors_list
+
+        ret.__remove_squares()
+        ret.__remove_above_top()
+        ret.__sort_form_sums()
+        ret.__collect_forms()
+
+        return ret
+    
+def d(form):
+    if isinstance(form,DifferentialForm) or isinstance(form,DifferentialFormMul):
+        return form.d
+    elif isinstance(form,Expr):
+        ret = DifferentialFormMul()
+        new_forms_list = []
+        new_factors_list = []
+        for f in form.free_symbols:
+            dform = form.diff(f)
+            if dform != 0:
+                new_forms_list += [[DifferentialForm(f,0).d]]
+                new_factors_list += [dform]
+        
+        ret.forms_list = new_forms_list
+        ret.factors = new_factors_list
+        return ret
+    elif isinstance(form,numbers.Number):
+        return 0
+    raise NotImplementedError
         
     
