@@ -7,6 +7,12 @@ def set_max_degree(max_degree: int):
 
 class DifferentialForm:
     def __init__(self,symbol,degree=0, exact=False):
+        """
+        Class: Differential Form
+
+        This is the basic class of this package. It holds all the information needed for a generic differential form.
+        
+        """
         self.degree = degree
         self.symbol = symbol
         self.exact = exact
