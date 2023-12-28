@@ -1,11 +1,11 @@
-from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols
+from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify
 import numbers
 MAX_DEGREE = 4
 
 def set_max_degree(max_degree: int):
     MAX_DEGREE=max_degree
 
-class DifferentialForm:
+class DifferentialForm():
     def __init__(self,symbol,degree=0, exact=False):
         """
         Class: Differential Form
@@ -19,6 +19,9 @@ class DifferentialForm:
         if degree < 0 or degree > MAX_DEGREE:
             self.symbol = Number(0)
         
+    # def __new__(self,symbol,degree=0):
+    #     # return super().__new__(cls,*args,**kwargs)
+    #     return self
 
     def __mul__(self,other):
         if isinstance(other,AtomicExpr):
@@ -37,7 +40,7 @@ class DifferentialForm:
         elif isinstance(other,DifferentialFormMul):
             return DifferentialFormMul(self,1)*other
         else:
-            raise NotImplementedError("Not implemented multplication of type '"+str(type(self).__name__)+" * "+str(type(other).__name__)+"'")
+            raise NotImplementedError("Not implemented multiplication of type '"+str(type(self).__name__)+" * "+str(type(other).__name__)+"'")
     
     def __add__(self,other):
         ret = DifferentialFormMul()
@@ -81,8 +84,17 @@ class DifferentialForm:
     def __str__(self):
         return latex(self.symbol)
 
+    def __repr__(self):
+        return self.symbol._repr_latex_()
+
     def _repr_latex_(self):
         return self.symbol._repr_latex_()
+
+    def _latex(self,printer):
+        return self._repr_latex_()
+    
+    def _print(self):
+        return self._repr_latex_()
     
     def __eq__(self,other):
         if isinstance(other,DifferentialForm):
@@ -96,6 +108,9 @@ class DifferentialForm:
             dsymbol = symbols("d"+str(self.symbol))
             return DifferentialForm(dsymbol,degree=self.degree+1,exact=True)
         raise NotImplementedError
+    
+    def simplify(self):
+        return self
 
 
 class DifferentialFormMul():
@@ -106,6 +121,7 @@ class DifferentialFormMul():
         else:
             self.forms_list = [[form]]
             self.factors = [factor]
+
     
     def __add__(self,other):
         ret = DifferentialFormMul()
@@ -349,6 +365,15 @@ class DifferentialFormMul():
         ret.__collect_forms()
 
         return ret
+
+    def simplify(self):
+        ret = DifferentialFormMul()
+        ret.forms_list = self.forms_list.copy()
+        ret.factors = []
+        for i in range(len(self.factors)):
+            ret.factors.append(simplify(self.factors[i]))
+
+        return ret
     
 def d(form):
     if isinstance(form,DifferentialForm) or isinstance(form,DifferentialFormMul):
@@ -369,5 +394,7 @@ def d(form):
     elif isinstance(form,numbers.Number):
         return 0
     raise NotImplementedError
+
+
         
     
