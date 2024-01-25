@@ -1,6 +1,22 @@
-from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify
+from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function
+import re
 import numbers
 MAX_DEGREE = 4
+
+def remove_latex_arguments(object):
+    functions = object.atoms(Function)
+    reps = {}
+    for fun in functions:
+        if hasattr(fun, 'name'):
+            reps[fun] = Symbol(fun.name)
+    object = object.subs(reps)
+    latex_str = latex(object)
+    latex_str = re.sub(r"\\frac{d}{d ([\\\S]+)}",r"\\partial_{\g<1>}",latex_str)
+    latex_str = re.sub(r"\\frac{\\partial}{\\partial ([\\\S]+)}",r"\\partial_{\g<1>}",latex_str)
+    latex_str = re.sub(r"\\frac{d}{d (\S)}",r"\\partial_{\g<1>}",latex_str)
+    latex_str = re.sub(r"\\frac{d\^{(\d)}}{d (\S)\^{[\d]}}",r"\\partial^{\g<1>}_{\g<2>}",latex_str)
+    latex_str = re.sub(r"\\frac{d\^{\d}}{d ([\S]+)d ([\S]+)}",r"\\partial^2_{\g<1> \g<2>}",latex_str)
+    return latex_str
 
 def set_max_degree(max_degree: int):
     MAX_DEGREE=max_degree
@@ -334,7 +350,7 @@ class DifferentialFormMul():
         self.factors = new_factors
             
     def _repr_latex_(self):
-        latex_str = "$" + "+".join([ "(" + latex(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))]) + "$"
+        latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))]) + "$"
         if latex_str == "$$":
             return "$0$"
         return latex_str
@@ -373,6 +389,21 @@ class DifferentialFormMul():
         for i in range(len(self.factors)):
             ret.factors.append(simplify(self.factors[i]))
 
+        return ret
+    
+    def subs(self,target,sub):
+        ret = DifferentialFormMul()
+        ret.factors = self.factors
+        ret.forms_list = self.forms_list
+        for i in range(len(self.factors)):
+            ret.factors[i] = ret.factors[i].subs(target,sub)
+        ## TODO: Implement substitution of forms
+
+
+        ret.__remove_squares()
+        ret.__remove_above_top()
+        ret.__sort_form_sums()
+        ret.__collect_forms()
         return ret
     
 def d(form):
