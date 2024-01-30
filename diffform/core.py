@@ -34,10 +34,6 @@ class DifferentialForm():
         self.exact = exact
         if degree < 0 or degree > MAX_DEGREE:
             self.symbol = Number(0)
-        
-    # def __new__(self,symbol,degree=0):
-    #     # return super().__new__(cls,*args,**kwargs)
-    #     return self
 
     def __mul__(self,other):
         if isinstance(other,AtomicExpr):
@@ -121,7 +117,7 @@ class DifferentialForm():
         if self.exact: return DifferentialForm(Number(0),self.degree+1,exact=True)
         elif isinstance(self.symbol,Number): return DifferentialForm(Number(0),self.degree+1,exact=True)
         else:
-            dsymbol = symbols("d"+str(self.symbol))
+            dsymbol = symbols(r"d\left("+str(self.symbol)+"\right)")
             return DifferentialForm(dsymbol,degree=self.degree+1,exact=True)
         raise NotImplementedError
     
@@ -395,6 +391,19 @@ class DifferentialFormMul():
         ret = DifferentialFormMul()
         ret.factors = self.factors
         ret.forms_list = self.forms_list
+
+        if isinstance(target,DifferentialForm):
+            for i in range(len(ret.forms_list)):
+                if target in ret.forms_list[i]:
+                    j = ret.forms_lst[i].index(target)
+                    #TODO: Figure out best method to swap differential forms out: split into 3 and compute?
+        elif isinstance(target,dict):
+            for key in target:
+                ret = ret.subs(key,target[key])
+        else:
+            pass
+
+
         for i in range(len(self.factors)):
             ret.factors[i] = ret.factors[i].subs(target,sub)
         ## TODO: Implement substitution of forms
