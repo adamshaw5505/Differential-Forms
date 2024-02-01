@@ -117,7 +117,7 @@ class DifferentialForm():
         if self.exact: return DifferentialForm(Number(0),self.degree+1,exact=True)
         elif isinstance(self.symbol,Number): return DifferentialForm(Number(0),self.degree+1,exact=True)
         else:
-            dsymbol = symbols(r"d\left("+str(self.symbol)+"\right)")
+            dsymbol = symbols(r"d\left("+str(self.symbol)+r"\right)")
             return DifferentialForm(dsymbol,degree=self.degree+1,exact=True)
         raise NotImplementedError
     
@@ -392,22 +392,40 @@ class DifferentialFormMul():
         ret.factors = self.factors
         ret.forms_list = self.forms_list
 
+        print(ret.forms_list)
+
         if isinstance(target,DifferentialForm):
+            new_forms_list = []
+            new_factors_list = []
             for i in range(len(ret.forms_list)):
                 if target in ret.forms_list[i]:
-                    j = ret.forms_lst[i].index(target)
-                    #TODO: Figure out best method to swap differential forms out: split into 3 and compute?
+                    j = ret.forms_list[i].index(target)
+                    if isinstance(sub,DifferentialForm):
+                        new_forms_list +=(ret.forms_list[i][:j-1] + [sub] + ret.forms_list[i][j+1:])
+                        new_factors_list.append(ret.factors[i])
+                    elif isinstance(sub,DifferentialFormMul):
+                        for k in range(len(sub.factors)):
+                            s = sub.forms_list[k]
+                            f = sub.factors[k]
+                            new_forms_list+=(ret.forms_list[i][:j-1]+[s]+ret.forms_list[i][j+1:])
+                            new_factors_list.append(ret.factors[i]*f)
+                    else:
+                        new_forms_list+=(ret.forms_list[i])
+                        new_factors_list.append(ret.factors[i])
+                else:
+                    new_forms_list+=(ret.forms_list[i])
+                    new_factors_list.append(ret.factors[i])
+            ret.factors = new_factors_list
+            ret.forms_list = new_forms_list
         elif isinstance(target,dict):
             for key in target:
                 ret = ret.subs(key,target[key])
-        else:
-            pass
-
 
         for i in range(len(self.factors)):
-            ret.factors[i] = ret.factors[i].subs(target,sub)
-        ## TODO: Implement substitution of forms
+            if not isinstance(sub,DifferentialForm) and not isinstance(sub,DifferentialFormMul):
+                ret.factors[i] = ret.factors[i].subs(target,sub)
 
+        print(ret.forms_list)
 
         ret.__remove_squares()
         ret.__remove_above_top()
