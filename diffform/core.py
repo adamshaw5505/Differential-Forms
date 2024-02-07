@@ -4,12 +4,13 @@ import numbers
 MAX_DEGREE = 4
 
 def remove_latex_arguments(object):
-    functions = object.atoms(Function)
-    reps = {}
-    for fun in functions:
-        if hasattr(fun, 'name'):
-            reps[fun] = Symbol(fun.name)
-    object = object.subs(reps)
+    if hasattr(object,'atoms'):
+        functions = object.atoms(Function)
+        reps = {}
+        for fun in functions:
+            if hasattr(fun, 'name'):
+                reps[fun] = Symbol(fun.name)
+        object = object.subs(reps)
     latex_str = latex(object)
     latex_str = re.sub(r"\\frac{d}{d ([\\\S]+)}",r"\\partial_{\g<1>}",latex_str)
     latex_str = re.sub(r"\\frac{\\partial}{\\partial ([\\\S]+)}",r"\\partial_{\g<1>}",latex_str)
@@ -34,6 +35,9 @@ class DifferentialForm():
         self.exact = exact
         if degree < 0 or degree > MAX_DEGREE:
             self.symbol = Number(0)
+        
+    def __eq__(self,other): return (self.symbol == other.symbol) and (self.degree == other.degree)
+    def __hash__(self): return hash((str(self.symbol),self.degree))
 
     def __mul__(self,other):
         if isinstance(other,AtomicExpr):
@@ -41,13 +45,18 @@ class DifferentialForm():
         elif isinstance(other,Expr):
             return DifferentialFormMul(self,other)
         elif isinstance(other,int):
-            return DifferentialFormMul(self,Integer(other))
+            return DifferentialFormMul(self,Number(other))
         elif isinstance(other,float):
-            return DifferentialFormMul(self,Rational(other))
+            return DifferentialFormMul(self,Number(other))
         elif isinstance(other,DifferentialForm):
             ret = DifferentialFormMul()
             ret.forms_list = [[self,other]]
             ret.factors = [1]
+
+            ret.remove_squares()
+            ret.remove_above_top()
+            ret.sort_form_sums()
+            ret.collect_forms()
             return ret
         elif isinstance(other,DifferentialFormMul):
             return DifferentialFormMul(self,1)*other
@@ -142,8 +151,8 @@ class DifferentialFormMul():
             ret.forms_list += (other.forms_list)
             ret.factors += self.factors + other.factors
 
-            ret.__sort_form_sums()
-            ret.__collect_forms()
+            ret.sort_form_sums()
+            ret.collect_forms()
             return ret
         elif isinstance(other,DifferentialForm):
             ret.forms_list += self.forms_list
@@ -160,7 +169,7 @@ class DifferentialFormMul():
             else:
                 ret.forms_list += [[other]]
                 ret.factors += [1]
-            ret.__collect_forms()
+            ret.collect_forms()
             return ret
         elif isinstance(other,int):
             return self + DifferentialForm(Integer(other),0)
@@ -195,10 +204,10 @@ class DifferentialFormMul():
             ret.forms_list = [fl+[other] for fl in self.forms_list]
             ret.factors = self.factors
 
-            ret.__remove_squares()
-            ret.__remove_above_top()
-            ret.__sort_form_sums()
-            ret.__collect_forms()
+            ret.remove_squares()
+            ret.remove_above_top()
+            ret.sort_form_sums()
+            ret.collect_forms()
         
         elif isinstance(other,DifferentialFormMul):
             for i in range(len(self.forms_list)):
@@ -206,17 +215,17 @@ class DifferentialFormMul():
                     ret.forms_list.append(self.forms_list[i]+other.forms_list[j])
                     ret.factors.append(self.factors[i]*other.factors[j])
 
-            ret.__remove_squares()
-            ret.__remove_above_top()
-            ret.__sort_form_sums()
-            ret.__collect_forms()
+            ret.remove_squares()
+            ret.remove_above_top()
+            ret.sort_form_sums()
+            ret.collect_forms()
         else:
             raise NotImplementedError
         
-        ret.__remove_squares()
-        ret.__remove_above_top()
-        ret.__sort_form_sums()
-        ret.__collect_forms()
+        ret.remove_squares()
+        ret.remove_above_top()
+        ret.sort_form_sums()
+        ret.collect_forms()
 
         return ret
     
@@ -242,27 +251,27 @@ class DifferentialFormMul():
             ret.forms_list = [[other]+fl for fl in self.forms_list]
             ret.factors = self.factors
 
-            ret.__remove_squares()
-            ret.__remove_above_top()
-            ret.__sort_form_sums()
-            ret.__collect_forms()
+            ret.remove_squares()
+            ret.remove_above_top()
+            ret.sort_form_sums()
+            ret.collect_forms()
         elif isinstance(other,DifferentialFormMul):
             for i in range(len(self.forms_list)):
                 for j in range(len(other.forms_list)):
                     ret.forms_list.append(other.forms_list[j]+self.forms_list[i])
                     ret.factors.append(self.factors[i]*other.factors[j])
 
-            ret.__remove_squares()
-            ret.__remove_above_top()
-            ret.__sort_form_sums()
-            ret.__collect_forms()
+            ret.remove_squares()
+            ret.remove_above_top()
+            ret.sort_form_sums()
+            ret.collect_forms()
         else:
             raise NotImplementedError
         
-            ret.__remove_squares()
-            ret.__remove_above_top()
-            ret.__sort_form_sums()
-            ret.__collect_forms()
+            ret.remove_squares()
+            ret.remove_above_top()
+            ret.sort_form_sums()
+            ret.collect_forms()
         return ret
 
     def __radd__(self,other): return self + other
@@ -275,20 +284,20 @@ class DifferentialFormMul():
     def __sub__(self,other): return self + (-other)
     def __rsub__(self,other): return other + (-self)
 
-    def __remove_squares(self):
+    def remove_squares(self):
         i = 0
         while i < len(self.forms_list):
             deled = False
             for j in range(len(self.forms_list[i])):
-                if self.forms_list[i][j].degree %2 == 1:
-                    if len([k for k,e in enumerate(self.forms_list[i]) if e == self.forms_list[i][j]]) > 1:
-                        del self.forms_list[i]
-                        del self.factors[i]
-                        deled = True
-                        break
+                f = self.forms_list[i][j]
+                if f.degree%2 == 1 and self.forms_list[i].count(f) > 1:
+                    del self.forms_list[i]
+                    del self.factors[i]
+                    deled = True
+                    break
             if not deled: i+=1
         
-    def __remove_above_top(self):
+    def remove_above_top(self):
         i = 0
         while i < len(self.forms_list):
             if sum([f.degree for f in self.forms_list[i]]) > MAX_DEGREE:
@@ -297,7 +306,7 @@ class DifferentialFormMul():
                 continue
             i += 1
 
-    def __sort_form_sums(self):
+    def sort_form_sums(self):
         for i in range(len(self.forms_list)):
             bubble_factor = 1
             for j in range(len(self.forms_list[i])):
@@ -309,7 +318,7 @@ class DifferentialFormMul():
                         bubble_factor *= (-1)**(self.forms_list[i][j].degree*self.forms_list[i][k].degree)
             self.factors[i] = self.factors[i]*bubble_factor
     
-    def __collect_forms(self):
+    def collect_forms(self):
         new_forms_list = []
         new_factors = []
         for i in range(len(self.forms_list)):
@@ -358,11 +367,12 @@ class DifferentialFormMul():
         new_factors_list = []
         for i in range(len(self.forms_list)):
             fact = self.factors[i]
-            for f in fact.free_symbols:
-                dfact = fact.diff(f)
-                if dfact != 0:
-                    new_forms_list += [[DifferentialForm(f,0).d] + self.forms_list[i]]
-                    new_factors_list += [dfact]
+            if hasattr(fact,"free_symbols"):
+                for f in fact.free_symbols:
+                    dfact = fact.diff(f)
+                    if dfact != 0:
+                        new_forms_list += [[DifferentialForm(f,0).d] + self.forms_list[i]]
+                        new_factors_list += [dfact]
             for j in range(len(self.forms_list[i])):
                 d_factor = (-1)**sum([0] + [f.degree for f in self.forms_list[i][0:j]])
                 new_forms_list += [self.forms_list[i][0:j] + [self.forms_list[i][j].d] + self.forms_list[i][j+1:]]
@@ -371,10 +381,10 @@ class DifferentialFormMul():
         ret.forms_list = new_forms_list
         ret.factors = new_factors_list
 
-        ret.__remove_squares()
-        ret.__remove_above_top()
-        ret.__sort_form_sums()
-        ret.__collect_forms()
+        ret.remove_squares()
+        ret.remove_above_top()
+        ret.sort_form_sums()
+        ret.collect_forms()
 
         return ret
 
@@ -392,8 +402,6 @@ class DifferentialFormMul():
         ret.factors = self.factors
         ret.forms_list = self.forms_list
 
-        print(ret.forms_list)
-
         if isinstance(target,DifferentialForm):
             new_forms_list = []
             new_factors_list = []
@@ -401,13 +409,14 @@ class DifferentialFormMul():
                 if target in ret.forms_list[i]:
                     j = ret.forms_list[i].index(target)
                     if isinstance(sub,DifferentialForm):
-                        new_forms_list +=(ret.forms_list[i][:j-1] + [sub] + ret.forms_list[i][j+1:])
+                        new_forms_list +=[ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]]
                         new_factors_list.append(ret.factors[i])
                     elif isinstance(sub,DifferentialFormMul):
+                        #TODO: Fix the bugs here and figure out what they are
                         for k in range(len(sub.factors)):
                             s = sub.forms_list[k]
                             f = sub.factors[k]
-                            new_forms_list+=(ret.forms_list[i][:j-1]+[s]+ret.forms_list[i][j+1:])
+                            new_forms_list+=[ret.forms_list[i][:j] + s + ret.forms_list[i][j+1:]]
                             new_factors_list.append(ret.factors[i]*f)
                     else:
                         new_forms_list+=(ret.forms_list[i])
@@ -417,6 +426,8 @@ class DifferentialFormMul():
                     new_factors_list.append(ret.factors[i])
             ret.factors = new_factors_list
             ret.forms_list = new_forms_list
+        elif isinstance(target,DifferentialFormMul):
+            raise NotImplementedError
         elif isinstance(target,dict):
             for key in target:
                 ret = ret.subs(key,target[key])
@@ -425,12 +436,10 @@ class DifferentialFormMul():
             if not isinstance(sub,DifferentialForm) and not isinstance(sub,DifferentialFormMul):
                 ret.factors[i] = ret.factors[i].subs(target,sub)
 
-        print(ret.forms_list)
-
-        ret.__remove_squares()
-        ret.__remove_above_top()
-        ret.__sort_form_sums()
-        ret.__collect_forms()
+        ret.remove_squares()
+        ret.remove_above_top()
+        ret.sort_form_sums()
+        ret.collect_forms()
         return ret
     
 def d(form):
