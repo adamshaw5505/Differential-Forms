@@ -1,4 +1,5 @@
 from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function
+from sympy.physics.units.quantities import Quantity
 import re
 import numbers
 MAX_DEGREE = 4
@@ -21,6 +22,11 @@ def remove_latex_arguments(object):
 
 def set_max_degree(max_degree: int):
     MAX_DEGREE=max_degree
+
+def constants(names:str)->symbols:
+    """ Uses the Quantity function to create constant symbols. """
+    names = re.sub('[\s+]', ' ', names)
+    return [Quantity(c) for c in names.split(' ')]
 
 class DifferentialForm():
     def __init__(self,symbol,degree=0, exact=False):
@@ -85,6 +91,7 @@ class DifferentialForm():
             ret.factors = [1]+other.factors
         else:
             raise NotImplementedError
+        ret.collect_forms()
         return ret
     
     def __lt__(self,other):
@@ -416,7 +423,7 @@ class DifferentialFormMul():
                         for k in range(len(sub.factors)):
                             s = sub.forms_list[k]
                             f = sub.factors[k]
-                            new_forms_list+=[ret.forms_list[i][:j] + s + ret.forms_list[i][j+1:]]
+                            new_forms_list+=[ret.forms_list[i][:j] + [s] + ret.forms_list[i][j+1:]]
                             new_factors_list.append(ret.factors[i]*f)
                     else:
                         new_forms_list+=(ret.forms_list[i])
@@ -427,6 +434,7 @@ class DifferentialFormMul():
             ret.factors = new_factors_list
             ret.forms_list = new_forms_list
         elif isinstance(target,DifferentialFormMul):
+            
             raise NotImplementedError
         elif isinstance(target,dict):
             for key in target:
