@@ -419,7 +419,6 @@ class DifferentialFormMul():
                         new_forms_list +=[ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]]
                         new_factors_list.append(ret.factors[i])
                     elif isinstance(sub,DifferentialFormMul):
-                        #TODO: Fix the bugs here and figure out what they are
                         for k in range(len(sub.factors)):
                             s = sub.forms_list[k]
                             f = sub.factors[k]
@@ -434,7 +433,8 @@ class DifferentialFormMul():
             ret.factors = new_factors_list
             ret.forms_list = new_forms_list
         elif isinstance(target,DifferentialFormMul):
-            
+            #TODO: Implement algorithm to find differential form within another differential form. (This version is unlikely to substitute perfectly, similarly to sympys one.)
+            #IDEAS: Only allow one term at a time
             raise NotImplementedError
         elif isinstance(target,dict):
             for key in target:
