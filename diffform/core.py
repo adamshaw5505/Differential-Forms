@@ -25,7 +25,7 @@ def set_max_degree(max_degree: int):
 
 def constants(names:str)->symbols:
     """ Uses the Quantity function to create constant symbols. """
-    names = re.sub('[\s+]', ' ', names)
+    names = re.sub(r'[\s+]', ' ', names)
     return [Quantity(c) for c in names.split(' ')]
 
 class DifferentialForm():
@@ -416,19 +416,17 @@ class DifferentialFormMul():
                 if target in ret.forms_list[i]:
                     j = ret.forms_list[i].index(target)
                     if isinstance(sub,DifferentialForm):
-                        new_forms_list +=[ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]]
+                        new_forms_list +=[list(ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:])]
                         new_factors_list.append(ret.factors[i])
                     elif isinstance(sub,DifferentialFormMul):
                         for k in range(len(sub.factors)):
-                            s = sub.forms_list[k]
-                            f = sub.factors[k]
-                            new_forms_list+=[ret.forms_list[i][:j] + [s] + ret.forms_list[i][j+1:]]
-                            new_factors_list.append(ret.factors[i]*f)
+                            new_forms_list+=[[]+ret.forms_list[i][:j]+sub.forms_list[k]+ret.forms_list[i][j+1:]]
+                            new_factors_list.append(ret.factors[i]*sub.factors[k])
                     else:
-                        new_forms_list+=(ret.forms_list[i])
+                        new_forms_list+=ret.forms_list[i]
                         new_factors_list.append(ret.factors[i])
                 else:
-                    new_forms_list+=(ret.forms_list[i])
+                    new_forms_list+= [ret.forms_list[i]]
                     new_factors_list.append(ret.factors[i])
             ret.factors = new_factors_list
             ret.forms_list = new_forms_list
@@ -441,7 +439,7 @@ class DifferentialFormMul():
                 ret = ret.subs(key,target[key])
 
         for i in range(len(self.factors)):
-            if not isinstance(sub,DifferentialForm) and not isinstance(sub,DifferentialFormMul):
+            if not isinstance(target,DifferentialForm) and not isinstance(target,DifferentialFormMul):
                 ret.factors[i] = ret.factors[i].subs(target,sub)
 
         ret.remove_squares()
