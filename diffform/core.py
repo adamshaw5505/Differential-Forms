@@ -149,8 +149,7 @@ class DifferentialFormMul():
         else:
             self.forms_list = [[form]]
             self.factors = [factor]
-
-    
+ 
     def __add__(self,other):
         ret = DifferentialFormMul()
         if isinstance(other,DifferentialFormMul):
@@ -416,30 +415,53 @@ class DifferentialFormMul():
                 if target in ret.forms_list[i]:
                     j = ret.forms_list[i].index(target)
                     if isinstance(sub,DifferentialForm):
-                        new_forms_list +=[list(ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:])]
+                        new_forms_list +=[ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]]
                         new_factors_list.append(ret.factors[i])
                     elif isinstance(sub,DifferentialFormMul):
                         for k in range(len(sub.factors)):
-                            new_forms_list+=[[]+ret.forms_list[i][:j]+sub.forms_list[k]+ret.forms_list[i][j+1:]]
-                            new_factors_list.append(ret.factors[i]*sub.factors[k])
+                            s = sub.forms_list[k]
+                            f = sub.factors[k]
+                            new_forms_list+= [ret.forms_list[i][:j] + s + ret.forms_list[i][j+1:]]
+                            new_factors_list.append(ret.factors[i]*f)
                     else:
-                        new_forms_list+=ret.forms_list[i]
+                        new_forms_list+=[ret.forms_list[i]]
                         new_factors_list.append(ret.factors[i])
                 else:
-                    new_forms_list+= [ret.forms_list[i]]
+                    new_forms_list+=(ret.forms_list[i])
                     new_factors_list.append(ret.factors[i])
             ret.factors = new_factors_list
             ret.forms_list = new_forms_list
         elif isinstance(target,DifferentialFormMul):
-            #TODO: Implement algorithm to find differential form within another differential form. (This version is unlikely to substitute perfectly, similarly to sympys one.)
-            #IDEAS: Only allow one term at a time
-            raise NotImplementedError
+            if len(target.factors) > 1: raise NotImplementedError("Cannot match more than 1 term at a time")
+            new_forms_list = []
+            new_factors_list = []
+            for i in range(len(ret.forms_list)):
+                match_index = -1
+                for j in range(len(ret.forms_list[i])-len(target.forms_list[0])):
+                    if ret.forms_list[i][j:j+len(target.forms_list[0])] == target.forms_list[0]:
+                        match_index = j
+                        break
+                if match_index != -1:
+                    if isinstance(sub,DifferentialFormMul):
+                        for k in range(len(sub.factors)):
+                            s = sub.forms_list[k]
+                            f = sub.factors[k]
+                            new_forms_list += [ret.forms_list[i][:match_index] + s + ret.forms_list[i][match_index+len(target.forms_list)+1:]]
+                            new_factors_list.append(ret.factors[i]*f)
+                    elif isinstance(sub,DifferentialForm):
+                        new_forms_list += [ret.forms_list[i][:match_index] + [sub] + ret.forms_list[i][match_index+len(target.forms_list)+1:]]
+                        new_factors_list.append(ret.factors[i])
+                else:
+                    new_forms_list += [ret.forms_list[i]]
+                    new_factors_list.append(ret.factors[i])
+            ret.factors = new_factors_list
+            ret.forms_list = new_forms_list
         elif isinstance(target,dict):
             for key in target:
                 ret = ret.subs(key,target[key])
 
         for i in range(len(self.factors)):
-            if not isinstance(target,DifferentialForm) and not isinstance(target,DifferentialFormMul):
+            if not isinstance(sub,DifferentialForm) and not isinstance(sub,DifferentialFormMul):
                 ret.factors[i] = ret.factors[i].subs(target,sub)
 
         ret.remove_squares()
@@ -467,7 +489,3 @@ def d(form):
     elif isinstance(form,numbers.Number):
         return 0
     raise NotImplementedError
-
-
-        
-    
