@@ -140,9 +140,10 @@ class DifferentialForm():
     def simplify(self):
         return self
 
-
 class DifferentialFormMul():
+
     def __init__(self,form:DifferentialForm=None,factor:AtomicExpr=None):
+        self.__sympy__ = True
         if form == None:
             self.forms_list = []
             self.factors = []
@@ -280,6 +281,12 @@ class DifferentialFormMul():
             ret.collect_forms()
         return ret
 
+    def __div__(self,other):
+        return self*(1/other)
+    
+    def __rdiv__(self,other):
+        return self*(1/other)
+
     def __radd__(self,other): return self + other
     def __neg__(self):
         ret = DifferentialFormMul()
@@ -394,7 +401,7 @@ class DifferentialFormMul():
 
         return ret
 
-    def simplify(self):
+    def _eval_simplify(self, **kwargs):
         ret = DifferentialFormMul()
         ret.forms_list = self.forms_list.copy()
         ret.factors = []
@@ -470,6 +477,8 @@ class DifferentialFormMul():
         ret.collect_forms()
         return ret
     
+
+
 def d(form):
     if isinstance(form,DifferentialForm) or isinstance(form,DifferentialFormMul):
         return form.d
