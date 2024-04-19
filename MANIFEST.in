@@ -1,0 +1,5 @@
+include setup.py
+include diffforms/__init__.py
+include diffforms/diffforms.py
+include requirements.txt
+include README.md

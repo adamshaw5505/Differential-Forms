@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: diffforms
+Version: 0.0.1
+Summary: Symbolic differential forms python library
+Home-page: https://github.com/Bone5505/Differential-Forms
+Author: Adam Shaw
+Keywords: differential forms,sympy,polyforms,exterior derivative
+
+ 
+    A symbolic differential form library with exterior calculus operations 
+    and sympy integration. Applications involve General Relativity and differential
+    form descriptions of Manifolds.
+    

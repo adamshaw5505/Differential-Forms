@@ -1,0 +1,12 @@
+MANIFEST.in
+README.md
+requirements.txt
+setup.py
+diffforms/__init__.py
+diffforms/core.py
+diffforms/release.py
+diffforms.egg-info/PKG-INFO
+diffforms.egg-info/SOURCES.txt
+diffforms.egg-info/dependency_links.txt
+diffforms.egg-info/requires.txt
+diffforms.egg-info/top_level.txt
