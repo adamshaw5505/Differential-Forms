@@ -1,5 +1,6 @@
 from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function
 from sympy.physics.units.quantities import Quantity
+from IPython.display import Math
 import re
 import numbers
 MAX_DEGREE = 4
@@ -19,6 +20,10 @@ def remove_latex_arguments(object):
     latex_str = re.sub(r"\\frac{d\^{(\d)}}{d (\S)\^{[\d]}}",r"\\partial^{\g<1>}_{\g<2>}",latex_str)
     latex_str = re.sub(r"\\frac{d\^{\d}}{d ([\S]+)d ([\S]+)}",r"\\partial^2_{\g<1> \g<2>}",latex_str)
     return latex_str
+
+def display_no_arg(object):
+    latex_str = remove_latex_arguments(object)
+    display(Math(latex_str))
 
 def set_max_degree(max_degree: int):
     MAX_DEGREE=max_degree
@@ -410,6 +415,11 @@ class DifferentialFormMul():
         ret.factors = []
         for i in range(len(self.factors)):
             ret.factors.append(simplify(self.factors[i]))
+        
+        ret.remove_squares()
+        ret.remove_above_top()
+        ret.sort_form_sums()
+        ret.collect_forms()
 
         return ret
     
@@ -456,10 +466,10 @@ class DifferentialFormMul():
                         for k in range(len(sub.factors)):
                             s = sub.forms_list[k]
                             f = sub.factors[k]
-                            new_forms_list += [ret.forms_list[i][:match_index] + s + ret.forms_list[i][match_index+len(target.forms_list):]]
+                            new_forms_list += [ret.forms_list[i][:match_index] + s + ret.forms_list[i][match_index+len(target.forms_list)+1:]]
                             new_factors_list.append(ret.factors[i]*f/target.factors[0])
                     elif isinstance(sub,DifferentialForm):
-                        new_forms_list += [ret.forms_list[i][:match_index] + [sub] + ret.forms_list[i][match_index+len(target.forms_list):]]
+                        new_forms_list += [ret.forms_list[i][:match_index] + [sub] + ret.forms_list[i][match_index+len(target.forms_list)+1:]]
                         new_factors_list.append(ret.factors[i]/target.factors[0])
                 else:
                     new_forms_list += [ret.forms_list[i]]
