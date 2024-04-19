@@ -469,7 +469,7 @@ class DifferentialFormMul():
                             new_forms_list += [ret.forms_list[i][:match_index] + s + ret.forms_list[i][match_index+len(target.forms_list)+1:]]
                             new_factors_list.append(ret.factors[i]*f/target.factors[0])
                     elif isinstance(sub,DifferentialForm):
-                        new_forms_list += [ret.forms_list[i][:match_index] + [sub] + ret.forms_list[i][match_index+len(target.forms_list)+1:]]
+                        new_forms_list += [ret.forms_list[i][:match_index] + [sub] + ret.forms_list[i][match_index+len(target.forms_list):]]
                         new_factors_list.append(ret.factors[i]/target.factors[0])
                 else:
                     new_forms_list += [ret.forms_list[i]]
