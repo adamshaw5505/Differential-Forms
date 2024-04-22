@@ -14,7 +14,7 @@ This is the list of possible implementation, in an approximate order of priority
 - [X] Exterior Product
 - [X] Simplification of Forms
 - [X] Exterior Differential Operator
-- [~] Substitution of factors/forms
+- [ ] Substitution of factors/forms
 - [ ] Vector fields
 - [ ] Generic tensor product
 - [ ] Insertion of vector fields
