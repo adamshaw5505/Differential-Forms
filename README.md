@@ -1,6 +1,6 @@
 General
 =======
-The Diffform python package implements differential forms and poly-forms from differential geometry. It includes some of the usual operations found in exterior calculus, include exterior product, differential operator. The main advatage of this package over other differential form packages ( e.g. [pycartan](https://github.com/TUD-RST/pycartan) ) is that it allows for polyforms and there is no dependence on basis forms. However, this removes some useful operations like insertion of vector fields (which is done using substitutions).
+The Diffform python package implements differential forms and poly-forms from differential geometry. It includes some of the usual operations found in exterior calculus, include exterior product, differential operator. The main advatage of this package over other differential form packages ( e.g. [pycartan](https://github.com/TUD-RST/pycartan) ) is that it allows for polyforms and there is no dependence on basis forms. However, this removes some useful operations like insertion of vector fields.
 
 This package is a part-time project during my PhD so updates should be suspected to end eventually. Bugs and mistakes may (possibly will) be prevalent.
 
@@ -14,19 +14,19 @@ This is the list of possible implementation, in an approximate order of priority
 - [X] Exterior Product
 - [X] Simplification of Forms
 - [X] Exterior Differential Operator
-- [X] Substitution of factors/forms
-- [ ] Sympy function integration
-- [ ] Arbitrary sympy factors (up to user to keep track of type)
-- [ ] Integration of forms (bounds/limits of polyforms? Inheret bounds?
-- [ ] More?
-
+- [~] Substitution of factors/forms
+- [ ] Vector fields
+- [ ] Generic tensor product
+- [ ] Insertion of vector fields
+- [ ] Hodge star given metric 
 
 Dependencies
 ============
 Make sure you have the following python packages:
 
+- wheel (needed for installing through pip)
 - sympy
 
 Installation
 ============
-Until I implement an installation method, the `core.py` file can be copied and imported to gain all functionality.
+Package should be uploaded to pip fairly frequently and is currently under [diffforms](https://pypi.org/project/diffforms/)

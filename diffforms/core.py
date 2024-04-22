@@ -14,11 +14,6 @@ def remove_latex_arguments(object):
                 reps[fun] = Symbol(fun.name)
         object = object.subs(reps)
     latex_str = latex(object)
-    latex_str = re.sub(r"\\frac{d}{d ([\\\S]+)}",r"\\partial_{\g<1>}",latex_str)
-    latex_str = re.sub(r"\\frac{\\partial}{\\partial ([\\\S]+)}",r"\\partial_{\g<1>}",latex_str)
-    latex_str = re.sub(r"\\frac{d}{d (\S)}",r"\\partial_{\g<1>}",latex_str)
-    latex_str = re.sub(r"\\frac{d\^{(\d)}}{d (\S)\^{[\d]}}",r"\\partial^{\g<1>}_{\g<2>}",latex_str)
-    latex_str = re.sub(r"\\frac{d\^{\d}}{d ([\S]+)d ([\S]+)}",r"\\partial^2_{\g<1> \g<2>}",latex_str)
     return latex_str
 
 def display_no_arg(object):
@@ -33,6 +28,81 @@ def constants(names:str)->symbols:
     names = re.sub(r'[\s+]', ' ', names)
     return [Quantity(c) for c in names.split(' ')]
 
+class VectorField():
+    def _init__(self,symbol):
+        """
+        Class: Vector Field
+
+        This class represents a single term in a vector fields component expansion, however, it is purely symbolic so no basis is required.
+
+        """
+        self.symbol = symbol
+    
+    def __eq__(self,other): return self.symbol == other.symbol
+    def __hash(self): return hash(self.symbol)
+
+    def __mull__(self,other):
+        #TODO: Implement
+        """
+        Pseudo Code:
+
+        IF other is a (VectorField or DifferentialForm):
+            return TensorProduct(self,other)
+        ELIF other is a (Tensor or DifferentialFormMul):
+            return SUM([TensorProduct(self,term) term in other])
+        """
+        pass
+    
+    def __add__(self,other):
+        #TODO: Implement
+        pass
+
+    def _repr_latex_(self): return "\\frac{\\partial}{\\partial"+str(self.symbol)+"}"
+
+    __repr__ = _repr_latex_
+    _latex   = _repr_latex_
+    _print   = _repr_latex_
+
+class Tensor():
+    def __init__(self):
+        self.__sympy__ = True
+        self.comps_list = []
+        self.factors = []
+    
+    def __add__(self,other):
+        ret = Tensor()
+        ret.comps_list += self.comps_list
+        ret.factors += self.factors
+        if isinstance(other,Tensor):
+            ret.comps_list +=  (other.comps_list)
+            ret.factors += other.factors
+        elif isinstance(other,DifferentialForm):
+            if isinstance(other.symbol,Number):
+                ret.comps_list += [[DifferentialForm(Number(1),0,exact=True)]]
+                ret.factors += [other.symbol]
+            elif isinstance(other.symbol,AtomicExpr):
+                ret.comps_list += [[DifferentialForm(Number(1),0,exact=True)]]
+                ret.factors += [other.symbol]
+            else:
+                ret.comps_list += [[other]]
+                ret.factors += [Number(1)]
+        elif isinstance(other,VectorField):
+            ret.comps_list += [[other]]
+            ret.factors += [Number(1)]
+        elif isinstance(other,DifferentialFormMul):
+            #TODO: Convert differential form to tensor and add it on
+            pass
+        elif isinstance(other,float) or isinstance(other,int):
+            ret = self + DifferentialForm(Rational(other),0)
+        elif isinstance(other,AtomicExpr):
+            ret = self + DifferentialForm(other,0)
+        else:
+            raise NotImplementedError
+        
+    def __mull__(self,other):
+        #TODO: Implement this probably through TensorProduct(?)
+        pass
+
 class DifferentialForm():
     def __init__(self,symbol,degree=0, exact=False):
         """
@@ -45,7 +115,7 @@ class DifferentialForm():
         self.symbol = symbol
         self.exact = exact
         if degree < 0 or degree > MAX_DEGREE:
-            self.symbol = Number(0)
+            self.symbol = Ratioanl(0)
         
     def __eq__(self,other): return (self.symbol == other.symbol) and (self.degree == other.degree)
     def __hash__(self): return hash((str(self.symbol),self.degree))
@@ -53,21 +123,14 @@ class DifferentialForm():
     def __mul__(self,other):
         if isinstance(other,AtomicExpr):
             return DifferentialFormMul(self,other)
-        elif isinstance(other,Expr):
-            return DifferentialFormMul(self,other)
-        elif isinstance(other,int):
-            return DifferentialFormMul(self,Number(other))
         elif isinstance(other,float):
-            return DifferentialFormMul(self,Number(other))
+            return DifferentialFormMul(self,Rational(other))
         elif isinstance(other,DifferentialForm):
             ret = DifferentialFormMul()
             ret.forms_list = [[self,other]]
             ret.factors = [1]
 
-            ret.remove_squares()
-            ret.remove_above_top()
-            ret.sort_form_sums()
-            ret.collect_forms()
+            ret._eval_simplify()
             return ret
         elif isinstance(other,DifferentialFormMul):
             return DifferentialFormMul(self,1)*other
@@ -76,16 +139,7 @@ class DifferentialForm():
     
     def __add__(self,other):
         ret = DifferentialFormMul()
-        if isinstance(other,AtomicExpr):
-            ret.forms_list = [[self],[DifferentialForm(Integer(1),0)]]
-            ret.factors = [1,other]
-        elif isinstance(other,Expr):
-            ret.forms_list = [[self],[DifferentialForm(Integer(1),0)]]
-            ret.factors = [1,other]
-        elif isinstance(other,int):
-            ret.forms_list = [[self],[DifferentialForm(Integer(1),0)]]
-            ret.factors = [1,other]
-        elif isinstance(other,float):
+        if isinstance(other,AtomicExpr) or isinstance(other,float) or isinstance(other,int):
             ret.forms_list = [[self],[DifferentialForm(Integer(1),0)]]
             ret.factors = [1,other]
         elif isinstance(other,DifferentialForm):
@@ -117,17 +171,12 @@ class DifferentialForm():
     def __str__(self):
         return latex(self.symbol)
 
-    def __repr__(self):
-        return self.symbol._repr_latex_()
-
     def _repr_latex_(self):
         return self.symbol._repr_latex_()
-
-    def _latex(self,printer):
-        return self._repr_latex_()
     
-    def _print(self):
-        return self._repr_latex_()
+    __repr__ = _repr_latex_
+    _latex   = _repr_latex_
+    _print   = _repr_latex_
     
     def __eq__(self,other):
         if isinstance(other,DifferentialForm):
@@ -159,20 +208,13 @@ class DifferentialFormMul():
     def __add__(self,other):
         ret = DifferentialFormMul()
         if isinstance(other,DifferentialFormMul):
-            ret.forms_list += (self.forms_list)
-            ret.forms_list += (other.forms_list)
+            ret.forms_list += (self.forms_list) + (other.forms_list)
             ret.factors += self.factors + other.factors
 
-            ret.sort_form_sums()
-            ret.collect_forms()
-            return ret
         elif isinstance(other,DifferentialForm):
             ret.forms_list += self.forms_list
             ret.factors += self.factors
             if isinstance(other.symbol,Number):
-                ret.forms_list += [[DifferentialForm(Number(1),0,exact=True)]]
-                ret.factors += [other.symbol]
-            elif isinstance(other.symbol,Expr):
                 ret.forms_list += [[DifferentialForm(Number(1),0,exact=True)]]
                 ret.factors += [other.symbol]
             elif isinstance(other.symbol,AtomicExpr):
@@ -181,45 +223,30 @@ class DifferentialFormMul():
             else:
                 ret.forms_list += [[other]]
                 ret.factors += [1]
-            ret.collect_forms()
-            return ret
-        elif isinstance(other,int):
-            return self + DifferentialForm(Integer(other),0)
-        elif isinstance(other,float):
-            return self + DifferentialForm(Rational(other),0)
+        elif isinstance(other,float) or isinstance(other,int):
+            ret = self + DifferentialForm(Rational(other),0)
         elif isinstance(other,AtomicExpr):
-            return self + DifferentialForm(other,0)
-        elif isinstance(other,Expr):
-            return self + DifferentialForm(other,0)
+            ret = self + DifferentialForm(other,0)
         else:
             raise NotImplementedError
+        
+        ret._eval_simplify()
+
+        return ret
     
     def __mul__(self,other):
         ret = DifferentialFormMul()
-        if isinstance(other,int):
+        if isinstance(other,int) or isinstance(other,float):
             ret.forms_list = self.forms_list
             ret.factors = [Integer(other)*f for f in self.factors]
-
-        elif isinstance(other,float):
-            ret.forms_list = self.forms_list
-            ret.factors = [Rational(other)*f for f in self.factors]
 
         elif isinstance(other,AtomicExpr):
             ret.forms_list = self.forms_list
             ret.factors = [(other)*f for f in self.factors]
 
-        elif isinstance(other,Expr):
-            ret.forms_list = self.forms_list
-            ret.factors = [(other)*f for f in self.factors]            
-
         elif isinstance(other,DifferentialForm):
             ret.forms_list = [fl+[other] for fl in self.forms_list]
             ret.factors = self.factors
-
-            ret.remove_squares()
-            ret.remove_above_top()
-            ret.sort_form_sums()
-            ret.collect_forms()
         
         elif isinstance(other,DifferentialFormMul):
             for i in range(len(self.forms_list)):
@@ -227,63 +254,38 @@ class DifferentialFormMul():
                     ret.forms_list.append(self.forms_list[i]+other.forms_list[j])
                     ret.factors.append(self.factors[i]*other.factors[j])
 
-            ret.remove_squares()
-            ret.remove_above_top()
-            ret.sort_form_sums()
-            ret.collect_forms()
         else:
             raise NotImplementedError
         
-        ret.remove_squares()
-        ret.remove_above_top()
-        ret.sort_form_sums()
-        ret.collect_forms()
+        ret._eval_simplify()
 
         return ret
     
     def __rmul__(self,other):
         ret = DifferentialFormMul()
-        if isinstance(other,int):
-            ret.forms_list = self.forms_list
-            ret.factors = [Integer(other)*f for f in self.factors]
-
-        elif isinstance(other,float):
+        if isinstance(other,float) or isinstance(other,int):
             ret.forms_list = self.forms_list
             ret.factors = [Rational(other)*f for f in self.factors]
 
         elif isinstance(other,AtomicExpr):
             ret.forms_list = self.forms_list
-            ret.factors = [(other)*f for f in self.factors]
-
-        elif isinstance(other,Expr):
-            ret.forms_list = self.forms_list
-            ret.factors = [(other)*f for f in self.factors]            
+            ret.factors = [(other)*f for f in self.factors]           
 
         elif isinstance(other,DifferentialForm):
             ret.forms_list = [[other]+fl for fl in self.forms_list]
             ret.factors = self.factors
 
-            ret.remove_squares()
-            ret.remove_above_top()
-            ret.sort_form_sums()
-            ret.collect_forms()
         elif isinstance(other,DifferentialFormMul):
             for i in range(len(self.forms_list)):
                 for j in range(len(other.forms_list)):
                     ret.forms_list.append(other.forms_list[j]+self.forms_list[i])
                     ret.factors.append(self.factors[i]*other.factors[j])
 
-            ret.remove_squares()
-            ret.remove_above_top()
-            ret.sort_form_sums()
-            ret.collect_forms()
         else:
             raise NotImplementedError
         
-            ret.remove_squares()
-            ret.remove_above_top()
-            ret.sort_form_sums()
-            ret.collect_forms()
+        ret._eval_simplify()
+
         return ret
 
     def __div__(self,other):
@@ -366,9 +368,6 @@ class DifferentialFormMul():
                 new_forms_list[i].pop(new_forms_strings.index('1'))
             i+=1
 
-
-
-
         self.forms_list = new_forms_list
         self.factors = new_factors
             
@@ -378,8 +377,7 @@ class DifferentialFormMul():
             return "$0$"
         return latex_str
     
-    def _sympystr(self,printer):
-        return self._repr_latex_()
+    _sympystr = _repr_latex_
 
     @property
     def d(self):
@@ -484,14 +482,9 @@ class DifferentialFormMul():
             for i in range(len(self.factors)):
                     ret.factors[i] = ret.factors[i].subs(target,sub)
 
-        ret.remove_squares()
-        ret.remove_above_top()
-        ret.sort_form_sums()
-        ret.collect_forms()
+        ret._eval_simplify()
         return ret
     
-
-
 def d(form):
     if isinstance(form,DifferentialForm) or isinstance(form,DifferentialFormMul):
         return form.d
@@ -511,3 +504,6 @@ def d(form):
     elif isinstance(form,numbers.Number):
         return 0
     raise NotImplementedError
+
+def TensorProduct(left,right):
+    pass

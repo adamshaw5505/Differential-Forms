@@ -8,6 +8,7 @@ python:
 
 install:
  - pip install --upgrade pip
+ - pip install wheel
  - pip install sympy
  - pip install --upgrade sympy
  - pip install -r requirements.txt
