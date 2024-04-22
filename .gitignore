@@ -1,4 +1,5 @@
-__pycache__/
-diffforms/__pycache__/
-.vscode/
-diffforms/tests/test.ipynb
+/__pycache__/*
+/diffforms/__pycache__/*
+/.vscode/
+/diffforms/tests/test.ipynb
+/build/
