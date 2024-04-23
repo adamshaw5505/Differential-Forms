@@ -129,7 +129,6 @@ class DifferentialForm():
             ret = DifferentialFormMul()
             ret.forms_list = [[self,other]]
             ret.factors = [1]
-
             ret._eval_simplify()
             return ret
         elif isinstance(other,DifferentialFormMul):
@@ -506,4 +505,19 @@ def d(form):
     raise NotImplementedError
 
 def TensorProduct(left,right):
-    pass
+    ret = Tensor()
+    if (isinstance(left,DifferentialForm) or isinstance(right,DifferentialForm)) and (isinstance(left,VectorField) or isinstance(right,VectorField)):
+        ret.comps_list = [[left],[right]]
+        ret.factors = [1,1]
+    elif isinstance(left,Tensor) and (isinstance(right,DifferentialForm) or isinstance(right,DifferentialForm)):
+        ret.comps_list = [comp+[right] for comp in left.comps_list]
+        ret.factors = left.factors
+    elif (isinstance(left,DifferentialForm) or isinstance(left,DifferentialForm)) and isinstance(right,Tensor):
+        ret.comps_list = [[left]+comp for comp in left.comps_list]
+        ret.factors = right.factors
+    elif isinstance(left,Tensor) and isinstance(right,Tensor):
+        for i in range(len(left.factors)):
+            for j in range(len(right.factors)):
+                ret.comps_list.append(left.comps_list[i]+right.comps_list[j])
+                ret.factors.append(left.factors[i]*right.factors[j])
+    return ret
