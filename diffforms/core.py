@@ -1,8 +1,12 @@
 from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function
 from sympy.physics.units.quantities import Quantity
 from IPython.display import Math
+from sympy.combinatorics import Permutation
+from itertools import permutations
 import re
 import numbers
+from math import factorial
+
 MAX_DEGREE = 4
 
 def remove_latex_arguments(object):
@@ -29,7 +33,7 @@ def constants(names:str)->symbols:
     return [Quantity(c) for c in names.split(' ')]
 
 class VectorField():
-    def _init__(self,symbol):
+    def __init__(self,symbol):
         """
         Class: Vector Field
 
@@ -57,7 +61,8 @@ class VectorField():
         #TODO: Implement
         pass
 
-    def _repr_latex_(self): return "\\frac{\\partial}{\\partial"+str(self.symbol)+"}"
+    def _repr_latex_(self):
+        return "$\\partial_{"+str(self.symbol)+"}$"
 
     __repr__ = _repr_latex_
     _latex   = _repr_latex_
@@ -103,6 +108,14 @@ class Tensor():
         #TODO: Implement this probably through TensorProduct(?)
         pass
 
+    def _repr_latex_(self):
+        latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))]) + "$"
+        if latex_str == "$$":
+            return "$0$"
+        return latex_str
+    
+    _sympystr = _repr_latex_
+
 class DifferentialForm():
     def __init__(self,symbol,degree=0, exact=False):
         """
@@ -120,22 +133,10 @@ class DifferentialForm():
     def __eq__(self,other): return (self.symbol == other.symbol) and (self.degree == other.degree)
     def __hash__(self): return hash((str(self.symbol),self.degree))
 
-    def __mul__(self,other):
-        if isinstance(other,AtomicExpr):
-            return DifferentialFormMul(self,other)
-        elif isinstance(other,float):
-            return DifferentialFormMul(self,Rational(other))
-        elif isinstance(other,DifferentialForm):
-            ret = DifferentialFormMul()
-            ret.forms_list = [[self,other]]
-            ret.factors = [1]
-            ret._eval_simplify()
-            return ret
-        elif isinstance(other,DifferentialFormMul):
-            return DifferentialFormMul(self,1)*other
-        else:
-            raise NotImplementedError("Not implemented multiplication of type '"+str(type(self).__name__)+" * "+str(type(other).__name__)+"'")
-    
+    def __mul__(self,other): return WedgeProduct(self,other)
+    def __rmul__(self,other): return WedgeProduct(other,self)
+    def __div__(self,other): return WedgeProduct(self,1/other)
+
     def __add__(self,other):
         ret = DifferentialFormMul()
         if isinstance(other,AtomicExpr) or isinstance(other,float) or isinstance(other,int):
@@ -165,7 +166,6 @@ class DifferentialForm():
     def __sub__(self,other): return self + (-other)
     def __rsub__(self,other): return (-self) + other
     def __radd__(self,other): return self + other
-    def __rmul__(self,other): return self * other
 
     def __str__(self):
         return latex(self.symbol)
@@ -181,6 +181,13 @@ class DifferentialForm():
         if isinstance(other,DifferentialForm):
             return str(self.symbol) == str(other.symbol) and self.degree == other.degree
     
+    def insert(self,vector:VectorField):
+        if isinstance(vector,VectorField):
+            if self.symbol == vector.symbol: return 1
+            else: return 0
+        else:
+            raise NotImplementedError
+
     @property
     def d(self):
         if self.exact: return DifferentialForm(Number(0),self.degree+1,exact=True)
@@ -209,89 +216,24 @@ class DifferentialFormMul():
         if isinstance(other,DifferentialFormMul):
             ret.forms_list += (self.forms_list) + (other.forms_list)
             ret.factors += self.factors + other.factors
-
         elif isinstance(other,DifferentialForm):
-            ret.forms_list += self.forms_list
-            ret.factors += self.factors
-            if isinstance(other.symbol,Number):
-                ret.forms_list += [[DifferentialForm(Number(1),0,exact=True)]]
-                ret.factors += [other.symbol]
-            elif isinstance(other.symbol,AtomicExpr):
-                ret.forms_list += [[DifferentialForm(Number(1),0,exact=True)]]
-                ret.factors += [other.symbol]
-            else:
-                ret.forms_list += [[other]]
-                ret.factors += [1]
-        elif isinstance(other,float) or isinstance(other,int):
+            ret.forms_list += self.forms_list + [[other]]
+            ret.factors += self.factors + [1]
+        elif isinstance(other,(float,int)):
             ret = self + DifferentialForm(Rational(other),0)
         elif isinstance(other,AtomicExpr):
             ret = self + DifferentialForm(other,0)
         else:
             raise NotImplementedError
-        
-        ret._eval_simplify()
+        ret = simplify(ret)
 
         return ret
     
-    def __mul__(self,other):
-        ret = DifferentialFormMul()
-        if isinstance(other,int) or isinstance(other,float):
-            ret.forms_list = self.forms_list
-            ret.factors = [Integer(other)*f for f in self.factors]
-
-        elif isinstance(other,AtomicExpr):
-            ret.forms_list = self.forms_list
-            ret.factors = [(other)*f for f in self.factors]
-
-        elif isinstance(other,DifferentialForm):
-            ret.forms_list = [fl+[other] for fl in self.forms_list]
-            ret.factors = self.factors
-        
-        elif isinstance(other,DifferentialFormMul):
-            for i in range(len(self.forms_list)):
-                for j in range(len(other.forms_list)):
-                    ret.forms_list.append(self.forms_list[i]+other.forms_list[j])
-                    ret.factors.append(self.factors[i]*other.factors[j])
-
-        else:
-            raise NotImplementedError
-        
-        ret._eval_simplify()
-
-        return ret
+    def __mul__(self,other): return WedgeProduct(self,other)
     
-    def __rmul__(self,other):
-        ret = DifferentialFormMul()
-        if isinstance(other,float) or isinstance(other,int):
-            ret.forms_list = self.forms_list
-            ret.factors = [Rational(other)*f for f in self.factors]
+    def __rmul__(self,other): return WedgeProduct(other,self)
 
-        elif isinstance(other,AtomicExpr):
-            ret.forms_list = self.forms_list
-            ret.factors = [(other)*f for f in self.factors]           
-
-        elif isinstance(other,DifferentialForm):
-            ret.forms_list = [[other]+fl for fl in self.forms_list]
-            ret.factors = self.factors
-
-        elif isinstance(other,DifferentialFormMul):
-            for i in range(len(self.forms_list)):
-                for j in range(len(other.forms_list)):
-                    ret.forms_list.append(other.forms_list[j]+self.forms_list[i])
-                    ret.factors.append(self.factors[i]*other.factors[j])
-
-        else:
-            raise NotImplementedError
-        
-        ret._eval_simplify()
-
-        return ret
-
-    def __div__(self,other):
-        return self*(1/other)
-    
-    def __rdiv__(self,other):
-        return self*(1/other)
+    def __div__(self,other): return WedgeProduct(self,(1/other))
 
     def __radd__(self,other): return self + other
     def __neg__(self):
@@ -432,7 +374,9 @@ class DifferentialFormMul():
                 if target in ret.forms_list[i]:
                     j = ret.forms_list[i].index(target)
                     if isinstance(sub,DifferentialForm):
-                        new_forms_list +=[ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]]
+                        print(ret.forms_list[i], sub)
+                        print([ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]])
+                        new_forms_list += [ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]]
                         new_factors_list.append(ret.factors[i])
                     elif isinstance(sub,DifferentialFormMul):
                         for k in range(len(sub.factors)):
@@ -463,11 +407,14 @@ class DifferentialFormMul():
                         for k in range(len(sub.factors)):
                             s = sub.forms_list[k]
                             f = sub.factors[k]
-                            new_forms_list += [ret.forms_list[i][:match_index] + s + ret.forms_list[i][match_index+len(target.forms_list)+1:]]
+                            new_forms_list += [ret.forms_list[i][:match_index] + s + ret.forms_list[i][match_index+len(target.forms_list[0])+1:]]
                             new_factors_list.append(ret.factors[i]*f/target.factors[0])
                     elif isinstance(sub,DifferentialForm):
-                        new_forms_list += [ret.forms_list[i][:match_index] + [sub] + ret.forms_list[i][match_index+len(target.forms_list):]]
+                        new_forms_list += [ret.forms_list[i][:match_index] + [sub] + ret.forms_list[i][match_index+len(target.forms_list[0]):]]
                         new_factors_list.append(ret.factors[i]/target.factors[0])
+                    elif isinstance(sub,float) or isinstance(sub,int) or isinstance(sub,AtomicExpr):
+                        new_forms_list +=[ret.forms_list[i][:match_index] + ret.forms_list[i][match_index+len(target.forms_list[0]):]]
+                        new_factors_list.append(ret.factors[i]*sub/target.factors[0])
                 else:
                     new_forms_list += [ret.forms_list[i]]
                     new_factors_list.append(ret.factors[i])
@@ -481,13 +428,42 @@ class DifferentialFormMul():
             for i in range(len(self.factors)):
                     ret.factors[i] = ret.factors[i].subs(target,sub)
 
-        ret._eval_simplify()
+        ret = simplify(ret)
         return ret
-    
+
+    def insert(self,vect:VectorField):
+        ret = DifferentialFormMul()
+        if isinstance(vect,VectorField):
+            for i in range(len(self.factors)):
+                sign = 1
+                for j in range(len(self.forms_list[i])):
+                    if self.forms_list[i][j].symbol == vect.symbol:
+                        ret.forms_list += [self.forms_list[i][:j] + self.forms_list[i][j+1:]]
+                        ret.factors += [self.factors[i]*sign]
+                        break
+                    else:
+                        sign *= (-1)**self.forms_list[i][j].degree
+        else:
+            raise NotImplementedError
+        
+        return ret
+
+    def to_tensor(self):
+        ret = Tensor()
+        for i in range(len(self.factors)):
+            L = len(self.forms_list[i])
+            for perm in permutations(list(range(L)),L):
+                parity = (len(Permutation(perm).full_cyclic_form)-1)%2
+                ret.comps_list += [[self.forms_list[i][p] for p in perm]]
+                ret.factors += [(-1)**parity*self.factors[i]/factorial]
+        return ret
+
+
 def d(form):
-    if isinstance(form,DifferentialForm) or isinstance(form,DifferentialFormMul):
+    if isinstance(form,(DifferentialForm,DifferentialFormMul)):
         return form.d
-    elif isinstance(form,Expr):
+    
+    elif isinstance(form,AtomicExpr):
         ret = DifferentialFormMul()
         new_forms_list = []
         new_factors_list = []
@@ -500,24 +476,54 @@ def d(form):
         ret.forms_list = new_forms_list
         ret.factors = new_factors_list
         return ret
-    elif isinstance(form,numbers.Number):
-        return 0
+
     raise NotImplementedError
+
+def WedgeProduct(left,right):
+    ret = DifferentialFormMul()
+    if isinstance(left,(int,float,Number)):
+        if isinstance(right,(int,float,Number)):
+            return left*right
+        elif isinstance(right,DifferentialForm):
+            ret.forms_list = [[right]]
+            ret.factors = [left]
+        elif isinstance(right,DifferentialFormMul):
+            ret.forms_list = right.forms_list
+            ret.factors = [left*f for f in right.factors]
+        else:
+            raise NotImplementedError
+    elif isinstance(left, DifferentialForm):
+        if isinstance(right,(int,float,Number)):
+            ret.forms_list = [[left]]
+            ret.factors = [right]
+        elif isinstance(right,DifferentialForm):
+            ret.forms_list = [[left,right]]
+            ret.factors = [1]
+        elif isinstance(right,DifferentialFormMul):
+            ret.forms_list = [[left]+rf for rf in right.forms_list]
+            ret.factors = right.factors
+        else:
+            raise NotImplementedError
+    elif isinstance(left,DifferentialFormMul):
+        if isinstance(right,(int,float,Number)):
+            ret.forms_list = left.forms_list
+            ret.factors = [right*f for f in left.factors]
+        elif isinstance(right,DifferentialForm):
+            ret.forms_list = [lf+[right] for lf in left.forms_list]
+            ret.factors = left.factors
+        elif isinstance(right,DifferentialFormMul):
+            for i in range(len(left.forms_list)):
+                for j in range(len(right.forms_list)):
+                    ret.forms_list.append(left.forms_list[i]+right.forms_list[j])
+                    ret.factors.append(left.factors[i]*right.factors[j])
+        else:
+            raise NotImplementedError
+    else:
+        raise NotImplementedError
+    
+    ret = simplify(ret)
+    return ret
 
 def TensorProduct(left,right):
     ret = Tensor()
-    if (isinstance(left,DifferentialForm) or isinstance(right,DifferentialForm)) and (isinstance(left,VectorField) or isinstance(right,VectorField)):
-        ret.comps_list = [[left],[right]]
-        ret.factors = [1,1]
-    elif isinstance(left,Tensor) and (isinstance(right,DifferentialForm) or isinstance(right,DifferentialForm)):
-        ret.comps_list = [comp+[right] for comp in left.comps_list]
-        ret.factors = left.factors
-    elif (isinstance(left,DifferentialForm) or isinstance(left,DifferentialForm)) and isinstance(right,Tensor):
-        ret.comps_list = [[left]+comp for comp in left.comps_list]
-        ret.factors = right.factors
-    elif isinstance(left,Tensor) and isinstance(right,Tensor):
-        for i in range(len(left.factors)):
-            for j in range(len(right.factors)):
-                ret.comps_list.append(left.comps_list[i]+right.comps_list[j])
-                ret.factors.append(left.factors[i]*right.factors[j])
-    return ret
+    # TODO: Implement in similar way to WedgeProduct is implemented
