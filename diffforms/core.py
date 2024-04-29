@@ -234,6 +234,7 @@ class DifferentialFormMul():
     def __rmul__(self,other): return WedgeProduct(other,self)
 
     def __div__(self,other): return WedgeProduct(self,(1/other))
+    def __truediv__(self,other): return WedgeProduct(self,(1/other))
 
     def __radd__(self,other): return self + other
     def __neg__(self):
@@ -374,8 +375,6 @@ class DifferentialFormMul():
                 if target in ret.forms_list[i]:
                     j = ret.forms_list[i].index(target)
                     if isinstance(sub,DifferentialForm):
-                        print(ret.forms_list[i], sub)
-                        print([ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]])
                         new_forms_list += [ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]]
                         new_factors_list.append(ret.factors[i])
                     elif isinstance(sub,DifferentialFormMul):
@@ -458,12 +457,11 @@ class DifferentialFormMul():
                 ret.factors += [(-1)**parity*self.factors[i]/factorial]
         return ret
 
-
 def d(form):
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
         return form.d
     
-    elif isinstance(form,(AtomicExpr,Function)):
+    elif isinstance(form,(AtomicExpr,Expr,Function)):
         ret = DifferentialFormMul()
         new_forms_list = []
         new_factors_list = []
@@ -481,8 +479,8 @@ def d(form):
 
 def WedgeProduct(left,right):
     ret = DifferentialFormMul()
-    if isinstance(left,(int,float,Number)):
-        if isinstance(right,(int,float,Number)):
+    if isinstance(left,(int,float,Number,AtomicExpr,Expr)):
+        if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
             return left*right
         elif isinstance(right,DifferentialForm):
             ret.forms_list = [[right]]
@@ -493,7 +491,7 @@ def WedgeProduct(left,right):
         else:
             raise NotImplementedError
     elif isinstance(left, DifferentialForm):
-        if isinstance(right,(int,float,Number)):
+        if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
             ret.forms_list = [[left]]
             ret.factors = [right]
         elif isinstance(right,DifferentialForm):
@@ -505,7 +503,7 @@ def WedgeProduct(left,right):
         else:
             raise NotImplementedError
     elif isinstance(left,DifferentialFormMul):
-        if isinstance(right,(int,float,Number)):
+        if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
             ret.forms_list = left.forms_list
             ret.factors = [right*f for f in left.factors]
         elif isinstance(right,DifferentialForm):
