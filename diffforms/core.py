@@ -463,7 +463,7 @@ def d(form):
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
         return form.d
     
-    elif isinstance(form,AtomicExpr):
+    elif isinstance(form,(AtomicExpr,Function)):
         ret = DifferentialFormMul()
         new_forms_list = []
         new_factors_list = []
