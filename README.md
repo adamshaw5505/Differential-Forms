@@ -4,7 +4,7 @@ The Diffform python package implements differential forms and poly-forms from di
 
 This package is a part-time project during my PhD so updates should be suspected to end eventually. Bugs and mistakes may (possibly will) be prevalent.
 
-Documentary will be implemented when I find the time, in the mean time I will try to provide comments in the code as a type of documentation.
+Documentation will be implemented when I find the time, when I have time I will try to implement comments in the class/functions as a rudamentary form of documentation.
 
 ToDo List
 =========
@@ -14,11 +14,13 @@ This is the list of possible implementation, in an approximate order of priority
 - [X] Exterior Product
 - [X] Simplification of Forms
 - [X] Exterior Differential Operator
-- [ ] Substitution of factors/forms (In Progress)
-- [ ] Vector fields (In Progress)
-- [ ] Generic tensor product (In Progress)
-- [ ] Insertion of vector fields (In Progress)
-- [ ] Hodge star given metric/frame
+- [X] Substitution of factors/forms (Done?)
+- [X] Vector fields
+- [X] Generic tensor product
+- [X] Insertion of vector fields (Done?)
+- [ ] Hodge star given metric/frame (In Progress)
+- [ ] Generic Tensor Contractions
+- [ ] Vector Field Commutator
 
 Dependencies
 ============
