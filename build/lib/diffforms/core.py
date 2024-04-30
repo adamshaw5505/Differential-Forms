@@ -9,29 +9,6 @@ from math import factorial
 
 MAX_DEGREE = 4
 
-def remove_latex_arguments(object):
-    if hasattr(object,'atoms'):
-        functions = object.atoms(Function)
-        reps = {}
-        for fun in functions:
-            if hasattr(fun, 'name'):
-                reps[fun] = Symbol(fun.name)
-        object = object.subs(reps)
-    latex_str = latex(object)
-    return latex_str
-
-def display_no_arg(object):
-    latex_str = remove_latex_arguments(object)
-    display(Math(latex_str))
-
-def set_max_degree(max_degree: int):
-    MAX_DEGREE=max_degree
-
-def constants(names:str)->symbols:
-    """ Uses the Quantity function to create constant symbols. """
-    names = re.sub(r'[\s+]', ' ', names)
-    return [Quantity(c) for c in names.split(' ')]
-
 class VectorField():
     def __init__(self,symbol):
         """
@@ -45,25 +22,42 @@ class VectorField():
     def __eq__(self,other): return self.symbol == other.symbol
     def __hash(self): return hash(self.symbol)
 
-    def __mull__(self,other):
-        #TODO: Implement
-        """
-        Pseudo Code:
+    def __mul__(self,other): return TensorProduct(self,other)
+    def __rmul__(self,other): return TensorProduct(other,self)
 
-        IF other is a (VectorField or DifferentialForm):
-            return TensorProduct(self,other)
-        ELIF other is a (Tensor or DifferentialFormMul):
-            return SUM([TensorProduct(self,term) term in other])
-        """
-        pass
+    def __neg__(self):
+        ret = Tensor()
+        ret.comps_list = [[self]]
+        ret.factors = [-1]
+        return ret
+    
+    def __sub__(self,other): return self + (-other)
+    def __rsub__(self,other): return (-self) + other
     
     def __add__(self,other):
-        #TODO: Implement
-        pass
+        ret = Tensor()
+        if isinstance(self,(int,float,AtomicExpr,Expr)):
+            ret.comps_list = [[self],[1]]
+            ret.factors = [1,1]
+        elif isinstance(other,(VectorField,DifferentialForm)):
+            ret.comps_list = [[self],[other]]
+            ret.factors = [1,1]
+        elif isinstance(other,DifferentialFormMul):
+            return self + other.to_tensor()
+        elif isinstance(other,Tensor):
+            ret.comps_list = [[self]] + other.comps_list
+            ret.factors = [1] + other.factors
+        else:
+            raise NotImplementedError
+        
+        return ret
+    def __radd__(self,other): return self+other
+        
 
     def _repr_latex_(self):
         return "$\\partial_{"+str(self.symbol)+"}$"
 
+    def __str__(self): return "\\partial_{"+str(self.symbol)+"}"
     __repr__ = _repr_latex_
     _latex   = _repr_latex_
     _print   = _repr_latex_
@@ -82,46 +76,48 @@ class Tensor():
             ret.comps_list +=  (other.comps_list)
             ret.factors += other.factors
         elif isinstance(other,DifferentialForm):
-            if isinstance(other.symbol,Number):
-                ret.comps_list += [[DifferentialForm(Number(1),0,exact=True)]]
-                ret.factors += [other.symbol]
-            elif isinstance(other.symbol,AtomicExpr):
-                ret.comps_list += [[DifferentialForm(Number(1),0,exact=True)]]
-                ret.factors += [other.symbol]
-            else:
-                ret.comps_list += [[other]]
-                ret.factors += [Number(1)]
+            ret.comps_list += [[other]]
+            ret.factors += [Number(1)]
         elif isinstance(other,VectorField):
             ret.comps_list += [[other]]
             ret.factors += [Number(1)]
         elif isinstance(other,DifferentialFormMul):
-            #TODO: Convert differential form to tensor and add it on
-            pass
+            return self + other.to_tensor()
         elif isinstance(other,float) or isinstance(other,int):
             ret = self + DifferentialForm(Rational(other),0)
         elif isinstance(other,AtomicExpr):
             ret = self + DifferentialForm(other,0)
         else:
             raise NotImplementedError
+        return ret
         
     def __mull__(self,other):
-        #TODO: Implement this probably through TensorProduct(?)
-        pass
+        return TensorProduct(self,other)
 
     def _repr_latex_(self):
-        latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))]) + "$"
+        latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
         if latex_str == "$$":
             return "$0$"
         return latex_str
     
+    def is_vectorfield(self):
+        for f in self.comps_list:
+            if len(f) != 1 or not isinstance(f[0],VectorField):
+                return False
+        return True
+
+    
     _sympystr = _repr_latex_
+    __repr__  = _repr_latex_
+    _latex    = _repr_latex_
+    _print    = _repr_latex_
 
 class DifferentialForm():
     def __init__(self,symbol,degree=0, exact=False):
         """
         Class: Differential Form
 
-        This is the basic class of this package. It holds all the information needed for a generic differential form.
+        This is the "atom" of a differential form in this package. It holds all the information needed for a generic differential form.
         
         """
         self.degree = degree
@@ -168,11 +164,9 @@ class DifferentialForm():
     def __rsub__(self,other): return (-self) + other
     def __radd__(self,other): return self + other
 
-    def __str__(self):
-        return latex(self.symbol)
+    def __str__(self): return latex(self.symbol)
 
-    def _repr_latex_(self):
-        return self.symbol._repr_latex_()
+    def _repr_latex_(self): return self.symbol._repr_latex_()
     
     __repr__ = _repr_latex_
     _latex   = _repr_latex_
@@ -187,8 +181,11 @@ class DifferentialForm():
     
     def insert(self,vector:VectorField):
         if isinstance(vector,VectorField):
-            if self.symbol == vector.symbol: return 1
+            if self.symbol == vector.symbol or str(self.symbol) == "d\\left("+str(vector.symbol)+"\\right)": return 1
             else: return 0
+        elif isinstance(vector,Tensor):
+            if vector.is_vectorfield():
+                return sum([vector.factors[i]*self.insert(vector.comps_list[i][0]) for i in range(len(vector.factors))])
         else:
             raise NotImplementedError
 
@@ -212,7 +209,10 @@ class DifferentialForm():
             for t in target:
                 ret = ret.subs(t,target[t])
             return ret
-
+        else:
+            ret = DifferentialForm(self.symbol,self.degree)
+            ret.exact = self.exact
+            return ret
 
 class DifferentialFormMul():
 
@@ -259,6 +259,23 @@ class DifferentialFormMul():
     
     def __sub__(self,other): return self + (-other)
     def __rsub__(self,other): return other + (-self)
+
+    def insert(self,other):
+        if isinstance(other,VectorField):
+            ret = DifferentialFormMul()
+            for i in range(len(self.forms_list)):
+                sign = 1
+                for j in range(len(self.forms_list[i])):
+                    if self.forms_list[i][j].insert(other) != 0:
+                        ret.forms_list += [self.forms_list[i][:j] + self.forms_list[i][j+1:]]
+                        ret.factors += [self.factors[i]*sign]
+                        break
+                    sign *= (-1)**self.forms_list[i][j].degree 
+            return ret
+        elif isinstance(other,Tensor) and other.is_vectorfield():
+            return sum([other.factors[i]*self.insert(other.comps_list[i][0]) for i in range(len(other.factors))])
+        else:
+            raise NotImplementedError
 
     def remove_squares(self):
         i = 0
@@ -443,24 +460,6 @@ class DifferentialFormMul():
         ret = simplify(ret)
         return ret
 
-    def insert(self,vect:VectorField):
-        ret = DifferentialFormMul()
-        if isinstance(vect,VectorField):
-            for i in range(len(self.factors)):
-                sign = 1
-                for j in range(len(self.forms_list[i])):
-                    cur_symbol = self.forms_list[i][j].symbol
-                    if cur_symbol == vect.symbol or str(cur_symbol) == "d\\left("+str(vect.symbol)+"\\right)":
-                        ret.forms_list += [self.forms_list[i][:j] + self.forms_list[i][j+1:]]
-                        ret.factors += [self.factors[i]*sign]
-                        break
-                    else:
-                        sign *= (-1)**self.forms_list[i][j].degree
-        else:
-            raise NotImplementedError
-        
-        return ret
-
     def to_tensor(self):
         ret = Tensor()
         for i in range(len(self.factors)):
@@ -470,6 +469,33 @@ class DifferentialFormMul():
                 ret.comps_list += [[self.forms_list[i][p] for p in perm]]
                 ret.factors += [(-1)**parity*self.factors[i]/factorial]
         return ret
+
+BASIS_ONEFORMS  = []
+TMP_BASIS_ONEFORMS = [DifferentialForm(rf"\tilde{{e^{i}}}") for i in range(MAX_DEGREE)]
+
+def remove_latex_arguments(object):
+    if hasattr(object,'atoms'):
+        functions = object.atoms(Function)
+        reps = {}
+        for fun in functions:
+            if hasattr(fun, 'name'):
+                reps[fun] = Symbol(fun.name)
+        object = object.subs(reps)
+    latex_str = latex(object)
+    return latex_str
+
+def display_no_arg(object):
+    latex_str = remove_latex_arguments(object)
+    display(Math(latex_str))
+
+def set_max_degree(max_degree: int):
+    MAX_DEGREE=max_degree
+    TMP_BASIS_ONEFORMS = [DifferentialForm(rf"\tilde{{e^{i}}}") for i in range(MAX_DEGREE)]
+
+def constants(names:str)->symbols:
+    """ Uses the Quantity function to create constant symbols. """
+    names = re.sub(r'[\s+]', ' ', names)
+    return [Quantity(c) for c in names.split(' ')]
 
 def d(form):
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
@@ -537,5 +563,53 @@ def WedgeProduct(left,right):
     return ret
 
 def TensorProduct(left,right):
+    if isinstance(left,DifferentialFormMul) or isinstance(right,DifferentialFormMul): raise NotImplementedError("Must convert DifferentialFormMul into Tensor before using with TensorProduct")
     ret = Tensor()
-    # TODO: Implement in similar way to WedgeProduct is implemented
+    if isinstance(left,(int,float,AtomicExpr,Expr)):
+        if isinstance(right,(int,float,AtomicExpr,Expr)):
+            return left*right
+        elif isinstance(right,(DifferentialForm,VectorField)):
+            ret.comps_list = [[right]]
+            ret.factors = [left]
+        elif isinstance(right,Tensor):
+            ret.comps_list = right.comps_list
+            ret.factors = [left*f for f in right.factors]
+        else:
+            raise NotImplementedError
+    elif isinstance(left,VectorField):
+        if isinstance(right,(int,float,AtomicExpr,Expr)):
+            ret.comps_list = [[left]]
+            ret.factors = [right]
+        elif isinstance(right,(DifferentialForm,VectorField)):
+            ret.comps_list = [[left,right]]
+            ret.factors = [1]
+        elif isinstance(right,Tensor):
+            ret.comps_list = [[left]+f for f in right.comps_list]
+            ret.factors = right.factors
+        else:
+            raise NotImplementedError
+    elif isinstance(left,Tensor):
+        if isinstance(right,(int,float,AtomicExpr,Expr)):
+            ret.comps_list = left.comps_list
+            ret.factors = [right*f for f in left.factors]
+        elif isinstance(right,(DifferentialForm,VectorField)):
+            ret.comps_list = [f+[right] for f in left.comps_list]
+            ret.factors = left.factors
+        elif isinstance(right,Tensor):
+            ret.comps_list = []
+            for i in range(len(left.comps_list)):
+                for j in range(len(right.comps_list)):
+                    ret.comps_list += [left.comps_list[i]+right.coms_list[j]]
+                    ret.factors += [left.factors[i]*right.factors[j]]
+        else:
+            raise NotImplementedError
+    else:
+        raise NotImplementedError
+
+    return ret
+
+def Hodge(form,basis=BASIS_ONEFORMS,signature=1):
+    if basis ==  []: raise NotImplementedError
+    dim = MAX_DEGREE
+    tmp_basis = [DifferentialForm(rf"\tilde{{e^{i}}}") for i in range(MAX_DEGREE)]
+    #TODO: Implement Hodge dual given basis and signature
