@@ -8,32 +8,6 @@ import numbers
 from math import factorial
 
 MAX_DEGREE = 4
-BASIS_ONEFORMS  = []
-TMP_BASIS_ONEFORMS = [DifferentialForm(rf"\tilde{{e^{i}}}") for i in range(MAX_DEGREE)]
-
-def remove_latex_arguments(object):
-    if hasattr(object,'atoms'):
-        functions = object.atoms(Function)
-        reps = {}
-        for fun in functions:
-            if hasattr(fun, 'name'):
-                reps[fun] = Symbol(fun.name)
-        object = object.subs(reps)
-    latex_str = latex(object)
-    return latex_str
-
-def display_no_arg(object):
-    latex_str = remove_latex_arguments(object)
-    display(Math(latex_str))
-
-def set_max_degree(max_degree: int):
-    MAX_DEGREE=max_degree
-    TMP_BASIS_ONEFORMS = [DifferentialForm(rf"\tilde{{e^{i}}}") for i in range(MAX_DEGREE)]
-
-def constants(names:str)->symbols:
-    """ Uses the Quantity function to create constant symbols. """
-    names = re.sub(r'[\s+]', ' ', names)
-    return [Quantity(c) for c in names.split(' ')]
 
 class VectorField():
     def __init__(self,symbol):
@@ -495,6 +469,33 @@ class DifferentialFormMul():
                 ret.comps_list += [[self.forms_list[i][p] for p in perm]]
                 ret.factors += [(-1)**parity*self.factors[i]/factorial]
         return ret
+
+BASIS_ONEFORMS  = []
+TMP_BASIS_ONEFORMS = [DifferentialForm(rf"\tilde{{e^{i}}}") for i in range(MAX_DEGREE)]
+
+def remove_latex_arguments(object):
+    if hasattr(object,'atoms'):
+        functions = object.atoms(Function)
+        reps = {}
+        for fun in functions:
+            if hasattr(fun, 'name'):
+                reps[fun] = Symbol(fun.name)
+        object = object.subs(reps)
+    latex_str = latex(object)
+    return latex_str
+
+def display_no_arg(object):
+    latex_str = remove_latex_arguments(object)
+    display(Math(latex_str))
+
+def set_max_degree(max_degree: int):
+    MAX_DEGREE=max_degree
+    TMP_BASIS_ONEFORMS = [DifferentialForm(rf"\tilde{{e^{i}}}") for i in range(MAX_DEGREE)]
+
+def constants(names:str)->symbols:
+    """ Uses the Quantity function to create constant symbols. """
+    names = re.sub(r'[\s+]', ' ', names)
+    return [Quantity(c) for c in names.split(' ')]
 
 def d(form):
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
