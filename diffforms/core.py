@@ -136,6 +136,7 @@ class DifferentialForm():
     def __mul__(self,other): return WedgeProduct(self,other)
     def __rmul__(self,other): return WedgeProduct(other,self)
     def __div__(self,other): return WedgeProduct(self,1/other)
+    def __truediv__(self,other): return WedgeProduct(self,1/other)
 
     def __add__(self,other):
         ret = DifferentialFormMul()
@@ -180,6 +181,9 @@ class DifferentialForm():
     def __eq__(self,other):
         if isinstance(other,DifferentialForm):
             return str(self.symbol) == str(other.symbol) and self.degree == other.degree
+
+    def _eval_simplify(self, **kwargs):
+        return self
     
     def insert(self,vector:VectorField):
         if isinstance(vector,VectorField):
@@ -196,9 +200,19 @@ class DifferentialForm():
             dsymbol = symbols(r"d\left("+str(self.symbol)+r"\right)")
             return DifferentialForm(dsymbol,degree=self.degree+1,exact=True)
         raise NotImplementedError
-    
-    def _eval_simplify(self, **kwargs):
-        return self
+
+    def subs(self,target,sub=None):
+        if target == self: return sub
+        elif isinstance(target,DifferentialFormMul):
+            if len(target.factors) == 1 and target.forms_list == [[self]]:
+                return sub/target.factors[0]
+        elif isinstance(target,dict):
+            ret = DifferentialForm(self.symbol,self.degree)
+            ret.exact = self.exact
+            for t in target:
+                ret = ret.subs(t,target[t])
+            return ret
+
 
 class DifferentialFormMul():
 
@@ -392,7 +406,7 @@ class DifferentialFormMul():
             ret.factors = new_factors_list
             ret.forms_list = new_forms_list
         elif isinstance(target,DifferentialFormMul):
-            if len(target.factors) > 1: raise NotImplementedError("Cannot match more than 1 term at a time")
+            if len(target.factors) > 1: raise NotImplementedError("Cannot replace more than 1 term at a time")
             new_forms_list = []
             new_factors_list = []
             for i in range(len(ret.forms_list)):
@@ -406,12 +420,12 @@ class DifferentialFormMul():
                         for k in range(len(sub.factors)):
                             s = sub.forms_list[k]
                             f = sub.factors[k]
-                            new_forms_list += [ret.forms_list[i][:match_index] + s + ret.forms_list[i][match_index+len(target.forms_list[0])+1:]]
+                            new_forms_list += [ret.forms_list[i][:match_index] + s + ret.forms_list[i][match_index+len(target.forms_list[0]):]]
                             new_factors_list.append(ret.factors[i]*f/target.factors[0])
                     elif isinstance(sub,DifferentialForm):
                         new_forms_list += [ret.forms_list[i][:match_index] + [sub] + ret.forms_list[i][match_index+len(target.forms_list[0]):]]
                         new_factors_list.append(ret.factors[i]/target.factors[0])
-                    elif isinstance(sub,float) or isinstance(sub,int) or isinstance(sub,AtomicExpr):
+                    elif isinstance(sub,(float,int,AtomicExpr,Expr)):
                         new_forms_list +=[ret.forms_list[i][:match_index] + ret.forms_list[i][match_index+len(target.forms_list[0]):]]
                         new_factors_list.append(ret.factors[i]*sub/target.factors[0])
                 else:
@@ -422,11 +436,10 @@ class DifferentialFormMul():
         elif isinstance(target,dict):
             for key in target:
                 ret = ret.subs(key,target[key])
-
-        if not isinstance(sub,DifferentialForm) and not isinstance(sub,DifferentialFormMul) and sub != None:
+        elif sub != None:
             for i in range(len(self.factors)):
-                    ret.factors[i] = ret.factors[i].subs(target,sub)
-
+                ret.factors[i] = ret.factors[i].subs(target,sub)
+        
         ret = simplify(ret)
         return ret
 
@@ -436,7 +449,8 @@ class DifferentialFormMul():
             for i in range(len(self.factors)):
                 sign = 1
                 for j in range(len(self.forms_list[i])):
-                    if self.forms_list[i][j].symbol == vect.symbol:
+                    cur_symbol = self.forms_list[i][j].symbol
+                    if cur_symbol == vect.symbol or str(cur_symbol) == "d\\left("+str(vect.symbol)+"\\right)":
                         ret.forms_list += [self.forms_list[i][:j] + self.forms_list[i][j+1:]]
                         ret.factors += [self.factors[i]*sign]
                         break
