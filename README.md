@@ -19,6 +19,7 @@ This is the list of possible implementation, in an approximate order of priority
 - [X] Generic tensor product
 - [X] Insertion of vector fields (Done?)
 - [ ] Hodge star given metric/frame (In Progress)
+- [ ] Solving 1-form simple linear equations
 - [ ] Generic Tensor Contractions
 - [ ] Vector Field Commutator
 

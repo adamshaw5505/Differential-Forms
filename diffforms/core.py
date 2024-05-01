@@ -260,6 +260,12 @@ class DifferentialFormMul():
     def __sub__(self,other): return self + (-other)
     def __rsub__(self,other): return other + (-self)
 
+    def __eq__(self,other):
+        if not isinstance(other,DifferentialFormMul): return False
+        elif other.factors != self.factors: return False
+        elif other.forms_list != self.forms_list: return False
+        return True
+
     def insert(self,other):
         if isinstance(other,VectorField):
             ret = DifferentialFormMul()
@@ -349,6 +355,12 @@ class DifferentialFormMul():
         if latex_str == "$$":
             return "$0$"
         return latex_str
+
+    def __str__(self):
+        str_str = "+".join([ "(" + str(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))])
+        if str_str == "":
+            return "0"
+        return str_str
     
     _sympystr = _repr_latex_
 
@@ -489,12 +501,20 @@ def display_no_arg(object):
     display(Math(latex_str))
 
 def set_max_degree(max_degree: int):
+    global MAX_DEGREE, TMP_BASIS_ONEFORMS
     MAX_DEGREE=max_degree
     TMP_BASIS_ONEFORMS = [DifferentialForm(rf"\tilde{{e^{i}}}") for i in range(MAX_DEGREE)]
 
+def set_hodge_basis(basis):
+    global BASIS_ONEFORMS
+    if len(basis) == MAX_DEGREE:
+        BASIS_ONEFORMS = basis
+    else:
+        raise NotImplementedError
+
 def constants(names:str)->symbols:
     """ Uses the Quantity function to create constant symbols. """
-    names = re.sub(r'[\s+]', ' ', names)
+    names = re.sub(r'[\s]+', ' ', names)
     return [Quantity(c) for c in names.split(' ')]
 
 def d(form):
@@ -609,7 +629,6 @@ def TensorProduct(left,right):
     return ret
 
 def Hodge(form,basis=BASIS_ONEFORMS,signature=1):
-    if basis ==  []: raise NotImplementedError
-    dim = MAX_DEGREE
-    tmp_basis = [DifferentialForm(rf"\tilde{{e^{i}}}") for i in range(MAX_DEGREE)]
+    # Give metric first?
     #TODO: Implement Hodge dual given basis and signature
+    pass
