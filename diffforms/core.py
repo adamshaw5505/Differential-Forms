@@ -1,11 +1,11 @@
-from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function
+from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita
 from sympy.physics.units.quantities import Quantity
 from IPython.display import Math
 from sympy.combinatorics import Permutation
 from itertools import permutations
 import re
 import numbers
-from math import factorial
+from math import factorial, prod
 
 MAX_DEGREE = 4
 
@@ -167,6 +167,8 @@ class DifferentialForm():
     def __str__(self): return latex(self.symbol)
 
     def _repr_latex_(self): return self.symbol._repr_latex_()
+
+    def __hash__(self): return hash((self.symbol,self.degree))
     
     __repr__ = _repr_latex_
     _latex   = _repr_latex_
@@ -261,10 +263,17 @@ class DifferentialFormMul():
     def __rsub__(self,other): return other + (-self)
 
     def __eq__(self,other):
-        if not isinstance(other,DifferentialFormMul): return False
+        if isinstance(other,DifferentialForm) and self.factors == [1] and len(self.forms_list[0]) == 1: return other == self.forms_list[0][0]
+        elif not isinstance(DifferentialFormMul): raise NotImplementedError
         elif other.factors != self.factors: return False
         elif other.forms_list != self.forms_list: return False
         return True
+
+    def __hash__(self): 
+        symbols = []
+        for forms in self.forms_list: symbols+=forms
+        symbols += self.factors
+        return hash(tuple(symbols))
 
     def insert(self,other):
         if isinstance(other,VectorField):
@@ -629,6 +638,23 @@ def TensorProduct(left,right):
     return ret
 
 def Hodge(form,basis=BASIS_ONEFORMS,signature=1):
-    # Give metric first?
-    #TODO: Implement Hodge dual given basis and signature
-    pass
+    ret = DifferentialFormMul()
+    full_index = list(range(len(basis)))
+    if isinstance(form,DifferentialFormMul):
+        for i in range(len(form.factors)):
+            term = form.forms_list[i]
+            factor = form.factors[i]
+            indices = [basis.index(t) for t in term if t in basis]
+            new_indices = [idx for idx in full_index if idx not in indices]
+            sign = LeviCivita(*(indices+new_indices))*signature**int(0 in indices)
+            ret = ret + (sign*form.factors[i])*prod([basis[j] for j in new_indices])
+    elif isinstance(form,DifferentialForm):
+        indices = [basis.index(form)]
+        new_indices = [idx for idx in full_index if idx not in indices]
+        sign = LeviCivita(*(indices+new_indices))*signature**int(0 in indices)
+        ret = ret + (sign*form.factors[i])*prod([basis[j] for j in new_indices])
+    elif isinstance(form,(int,float,Number,Expr)):
+        return form*prod(basis)
+    else:
+        raise NotImplementedError
+    return ret
