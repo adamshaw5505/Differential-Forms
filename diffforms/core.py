@@ -741,6 +741,7 @@ def Contract(left,right,*positions):
     ret = Tensor(left.manifold)
     for i in range(len(left.factors)):
         for j in range(len(right.factors)):
+            pass
             #TODO: Figure out how tensor contraction works in this setup
 
     
