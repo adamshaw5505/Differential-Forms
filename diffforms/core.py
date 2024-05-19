@@ -734,14 +734,25 @@ def Contract(left,right,*positions):
     left_weight = left.get_weight()
     right_weight = right.get_weight()
     if left_weight == (None) or right_weight == (None): raise TypeError("Tensors must be of consistent types")
+    p1_list = []
+    p2_list = []
     for p in positions:
         p1,p2 = p
+        p1_list += [p1]
+        p2_list += [p1]
         if p1 > len(left_weight) or p2 > len(right_weight) or p1 < 0 or p2 < 0: raise IndexError("Contraction index out of range.")
-        if left_weight[p1]*right_weight[p2] == 1: raise NotImplementedError("Tensor Contraction must be between terms that are vectors and differential forms.")
+        if left_weight[p1]*right_weight[p2] == 1: raise NotImplementedError("Tensor Contraction must be between vector fields and differential forms.")
     ret = Tensor(left.manifold)
     for i in range(len(left.factors)):
         for j in range(len(right.factors)):
-            pass
+            left_poped = [e for k,e in enumerate(left.comps_list[i]) if k in p1_list]
+            right_poped = [e for k,e in enumerate(right.comps_list[j]) if k in p2_list]
+            left_without = [e for k,e in enumerate(left.comps_list[i]) if k not in p1_list]
+            right_without = [e for k,e in enumerate(right.comps_list[j]) if k not in p2_list]
+            # Use removed items to contract and use without to form new tensor
+    return ret
+
+
             #TODO: Figure out how tensor contraction works in this setup
 
     
