@@ -8,11 +8,11 @@ import numbers
 from math import factorial, prod
 
 class Manifold():
-    def __init__(self,label,dimension,signature=1):
+    def __init__(self,label,dimension):
         self.label = label
         assert(dimension > 0)
         self.dimension = dimension
-        self.signature = signature
+        self.signature = None
         self.basis = None
     
     def __eq__(self,other):
@@ -104,6 +104,7 @@ class Tensor():
             ret = self + DifferentialForm(other,0)
         else:
             raise NotImplementedError
+        ret.collect_comps()
         return ret
 
     def __sub__(self,other):
@@ -138,6 +139,50 @@ class Tensor():
             if current_weight != first_weight: return (None)
         return first_weight
     
+    def collect_comps(self):
+        new_comps_list = []
+        new_factors = []
+        for i in range(len(self.comps_list)):
+            if self.comps_list[i] not in new_comps_list:
+                new_comps_list.append(self.comps_list[i])
+                new_factors.append(self.factors[i])
+            else:
+                j = new_comps_list.index(self.comps_list[i])
+                new_factors[j] += self.factors[i]
+        
+        i = 0
+        while  i < len(new_comps_list):
+            if new_factors[i] == 0:
+                del new_factors[i]
+                del new_comps_list[i]
+                continue
+            i+=1
+    
+        i = 0
+        while i < len(new_comps_list):
+            new_comps_strings = [str(f) for f in new_comps_list[i]]
+            if '0' in new_comps_strings:
+                del new_comps_list[i]
+                del new_factors[i]
+                continue
+            if len(new_comps_list[i]) > 1 and '1' in new_comps_strings:
+                new_comps_list[i].pop(new_comps_strings.index('1'))
+            i+=1
+
+        self.comps_list = new_comps_list
+        self.factors = new_factors
+
+    def _eval_simplify(self, **kwargs):
+        ret = Tensor(self.manifold)
+        ret.comps_list = self.comps_list
+        ret.factors = [simplify(f) for f in self.factors]
+        ret.collect_comps()
+        return ret
+
+    def subs(self,target,subs=None):
+        #TODO: Implement subs function
+        pass
+
     _sympystr = _repr_latex_
     __repr__  = _repr_latex_
     _latex    = _repr_latex_
@@ -175,7 +220,7 @@ class DifferentialForm():
     def __add__(self,other):
         ret = DifferentialFormMul(self.manifold)
         if isinstance(other,AtomicExpr) or isinstance(other,float) or isinstance(other,int):
-            ret.forms_list = [[self],[DifferentialForm(Integer(1),0)]]
+            ret.forms_list = [[self],[DifferentialForm(self.manifold,Integer(1),0)]]
             ret.factors = [1,other]
         elif isinstance(other,DifferentialForm):
             ret.forms_list = [[self],[other]]
@@ -231,11 +276,11 @@ class DifferentialForm():
 
     @property
     def d(self):
-        if self.exact: return DifferentialForm(Number(0),self.degree+1,exact=True)
-        elif isinstance(self.symbol,Number): return DifferentialForm(Number(0),self.degree+1,exact=True)
+        if self.exact: return DifferentialForm(self.manifold,Number(0),self.degree+1,exact=True)
+        elif isinstance(self.symbol,Number): return DifferentialForm(self.manifold,Number(0),self.degree+1,exact=True)
         else:
             dsymbol = symbols(r"d\left("+str(self.symbol)+r"\right)")
-            return DifferentialForm(dsymbol,degree=self.degree+1,exact=True)
+            return DifferentialForm(self.manifold,dsymbol,degree=self.degree+1,exact=True)
         raise NotImplementedError
 
     def subs(self,target,sub=None):
@@ -269,15 +314,17 @@ class DifferentialFormMul():
     def __add__(self,other):
         ret = DifferentialFormMul(self.manifold)
         if isinstance(other,DifferentialFormMul):
+            assert(self.manifold == other.manifold)
             ret.forms_list += (self.forms_list) + (other.forms_list)
             ret.factors += self.factors + other.factors
         elif isinstance(other,DifferentialForm):
+            assert(self.manifold == other.manifold)
             ret.forms_list += self.forms_list + [[other]]
             ret.factors += self.factors + [1]
         elif isinstance(other,(float,int)):
-            ret = self + DifferentialForm(Rational(other),0)
+            ret = self + DifferentialForm(self.manifold,Rational(other),0)
         elif isinstance(other,AtomicExpr):
-            ret = self + DifferentialForm(other,0)
+            ret = self + DifferentialForm(self.manifold,other,0)
         else:
             raise NotImplementedError
         ret = simplify(ret)
@@ -321,7 +368,7 @@ class DifferentialFormMul():
 
     def insert(self,other):
         if isinstance(other,VectorField):
-            ret = DifferentialFormMul()
+            ret = DifferentialFormMul(self.manifold)
             for i in range(len(self.forms_list)):
                 sign = 1
                 for j in range(len(self.forms_list[i])):
@@ -582,22 +629,24 @@ def DefConstants(names:str)->symbols:
     names = re.sub(r'[\s]+', ' ', names)
     return [Quantity(c) for c in names.split(' ')]
 
-def SetBasis(manifold:Manifold,basis:list):
+def SetBasis(manifold:Manifold,basis:list,signature=1):
     assert(len(basis) == manifold.dimension)
     manifold.basis = basis
+    manifold.signature = signature
 
-def d(form):
+def d(form,manifold=None):
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
         return form.d
     
     elif isinstance(form,(AtomicExpr,Expr,Function)):
-        ret = DifferentialFormMul()
+        if manifold == None: raise NotImplementedError("Manifold cannot be None for Scalar input")
+        ret = DifferentialFormMul(manifold)
         new_forms_list = []
         new_factors_list = []
         for f in form.free_symbols:
             dform = form.diff(f)
             if dform != 0:
-                new_forms_list += [[DifferentialForm(f,0).d]]
+                new_forms_list += [[DifferentialForm(manifold,f,0).d]]
                 new_factors_list += [dform]
         
         ret.forms_list = new_forms_list
@@ -725,7 +774,7 @@ def TensorProduct(left,right):
             raise NotImplementedError
     else:
         raise NotImplementedError
-
+    ret.collect_comps()
     return ret
 
 def Contract(left,right,*positions):
@@ -739,7 +788,7 @@ def Contract(left,right,*positions):
     for p in positions:
         p1,p2 = p
         p1_list += [p1]
-        p2_list += [p1]
+        p2_list += [p2]
         if p1 > len(left_weight) or p2 > len(right_weight) or p1 < 0 or p2 < 0: raise IndexError("Contraction index out of range.")
         if left_weight[p1]*right_weight[p2] == 1: raise NotImplementedError("Tensor Contraction must be between vector fields and differential forms.")
     ret = Tensor(left.manifold)
@@ -749,34 +798,45 @@ def Contract(left,right,*positions):
             right_poped = [e for k,e in enumerate(right.comps_list[j]) if k in p2_list]
             left_without = [e for k,e in enumerate(left.comps_list[i]) if k not in p1_list]
             right_without = [e for k,e in enumerate(right.comps_list[j]) if k not in p2_list]
-            # Use removed items to contract and use without to form new tensor
+            sign = 1
+            for k in range(len(left_poped)):
+                if isinstance(left_poped[k],DifferentialForm):
+                    sign *= left_poped[k].insert(right_poped[k])
+                else:
+                    sign *= right_poped[k].insert(left_poped[k])
+            if sign != 0:
+                ret.comps_list += [left_without + right_without]
+                ret.factors += [left.factors[i]*right.factors[j]]
+    ret.collect_comps()
     return ret
-
-
-            #TODO: Figure out how tensor contraction works in this setup
-
     
 def Hodge(form):
-    ret = DifferentialFormMul(form.manifold)
-    assert(form.manifold.basis != None)
-    basis = form.manifold.basis
-    signature = form.manifold.signature
-    full_index = list(range(len(basis)))
-    if isinstance(form,DifferentialFormMul):
-        for i in range(len(form.factors)):
-            term = form.forms_list[i]
-            factor = form.factors[i]
-            indices = [basis.index(t) for t in term if t in basis]
-            new_indices = [idx for idx in full_index if idx not in indices]
-            sign = LeviCivita(*(indices+new_indices))*signature**int(0 in indices)
-            ret = ret + (sign*form.factors[i])*prod([basis[j] for j in new_indices])
-    elif isinstance(form,DifferentialForm):
-        indices = [basis.index(form)]
-        new_indices = [idx for idx in full_index if idx not in indices]
-        sign = LeviCivita(*(indices+new_indices))*signature**int(0 in indices)
-        ret = ret + sign*prod([basis[j] for j in new_indices])
-    elif isinstance(form,(int,float,Number,Expr)):
-        return form*prod(basis)
-    else:
-        raise NotImplementedError
-    return ret
+    # TODO: Implements Solver first
+    # Allow basis to be generic 1-form and then solve for everything in terms of those
+    # SetBasis([dt+dx,dt-dx,dy,dz]) and solve tmp_e0 = dt+dx, tmp_e1 = dt-dx and so on
+    # Then Solve for dt,dx,dy,dz = f(tmp_eI) and substitute into imput and then compute HodgeStar given eI's
+    # Use signature as well and then substitute back original dt,dx,dy,dz 
+    pass
+    # ret = DifferentialFormMul(form.manifold)
+    # assert(form.manifold.basis != None)
+    # basis = form.manifold.basis
+    # signature = form.manifold.signature
+    # full_index = list(range(len(basis)))
+    # if isinstance(form,DifferentialFormMul):
+    #     for i in range(len(form.factors)):
+    #         term = form.forms_list[i]
+    #         factor = form.factors[i]
+    #         indices = [basis.index(t) for t in term if t in basis]
+    #         new_indices = [idx for idx in full_index if idx not in indices]
+    #         sign = LeviCivita(*(indices+new_indices))*signature**int(0 in indices)
+    #         ret = ret + (sign*form.factors[i])*prod([basis[j] for j in new_indices])
+    # elif isinstance(form,DifferentialForm):
+    #     indices = [basis.index(form)]
+    #     new_indices = [idx for idx in full_index if idx not in indices]
+    #     sign = LeviCivita(*(indices+new_indices))*signature**int(0 in indices)
+    #     ret = ret + sign*prod([basis[j] for j in new_indices])
+    # elif isinstance(form,(int,float,Number,Expr)):
+    #     return form*prod(basis)
+    # else:
+    #     raise NotImplementedError
+    # return ret

@@ -14,13 +14,14 @@ This is the list of possible implementation, in an approximate order of priority
 - [X] Exterior Product
 - [X] Simplification of Forms
 - [X] Exterior Differential Operator
-- [X] Substitution of factors/forms (Done?)
+- [X] Substitution of factors/forms
 - [X] Vector fields
 - [X] Generic tensor product
-- [X] Insertion of vector fields (Done?)
+- [X] Insertion of vector fields
+- [X] Generic Tensor Contractions
+- [ ] Implement substitution for Tensors
 - [ ] Hodge star given metric/frame (In Progress)
 - [ ] Solving 1-form simple linear equations
-- [ ] Generic Tensor Contractions
 - [ ] Vector Field Commutator
 
 Dependencies
