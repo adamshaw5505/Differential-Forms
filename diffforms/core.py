@@ -242,7 +242,7 @@ class DifferentialForm():
         else:
             return (self.degree) < other.degree
 
-    def __neg__(self): return DifferentialFormMul(self,-1)
+    def __neg__(self): return DifferentialFormMul(self.manifold,self,-1)
     def __sub__(self,other): return self + (-other)
     def __rsub__(self,other): return (-self) + other
     def __radd__(self,other): return self + other
@@ -345,7 +345,7 @@ class DifferentialFormMul():
 
     def __radd__(self,other): return self + other
     def __neg__(self):
-        ret = DifferentialFormMul()
+        ret = DifferentialFormMul(self.manifold)
         ret.forms_list = self.forms_list
         ret.factors = [-f for f in self.factors]
         return ret
@@ -466,7 +466,7 @@ class DifferentialFormMul():
 
     @property
     def d(self):
-        ret = DifferentialFormMul()
+        ret = DifferentialFormMul(self.manifold)
         new_forms_list = []
         new_factors_list = []
         for i in range(len(self.forms_list)):
@@ -475,7 +475,7 @@ class DifferentialFormMul():
                 for f in fact.free_symbols:
                     dfact = fact.diff(f)
                     if dfact != 0:
-                        new_forms_list += [[DifferentialForm(f,0).d] + self.forms_list[i]]
+                        new_forms_list += [[DifferentialForm(self.manifold,f,0).d] + self.forms_list[i]]
                         new_factors_list += [dfact]
             for j in range(len(self.forms_list[i])):
                 d_factor = (-1)**sum([0] + [f.degree for f in self.forms_list[i][0:j]])
@@ -507,7 +507,7 @@ class DifferentialFormMul():
         return ret
     
     def subs(self,target,sub=None):
-        ret = DifferentialFormMul()
+        ret = DifferentialFormMul(self.manifold)
         ret.factors = self.factors
         ret.forms_list = self.forms_list
 
