@@ -116,7 +116,7 @@ class Tensor():
         ret.factors = [-f for f in self.factors]
         return ret
 
-    def __mull__(self,other):
+    def __mul__(self,other):
         return TensorProduct(self,other)
 
     def _repr_latex_(self):
@@ -179,9 +179,71 @@ class Tensor():
         ret.collect_comps()
         return ret
 
-    def subs(self,target,subs=None):
-        #TODO: Implement subs function
-        pass
+    def subs(self,target,sub=None,simp=True):
+        ret = Tensor(self.manifold)
+        ret.factors = self.factors
+        ret.comps_list = self.comps_list
+
+        if isinstance(target,(DifferentialForm,VectorField)):
+            new_comps_list = []
+            new_factors_list = []
+            for I in range(len(self.comps_list)):
+                if target in self.comps_list[I]:
+                    J = ret.forms_list[I].index(target)
+                    if isinstance(sub,(float,int,AtomicExpr,Expr,Number)):
+                        new_comps_list +=[ret.comps_list[i][:J] + ret.comps_list[i][J+1:]]
+                        new_factors_list.append(ret.factors[i]*sub/target.factors[0])
+                    elif isinstance(sub,(DifferentialForm,VectorField)):
+                        new_comps_list += [ret.comps_list[I][:J] + [sub] + ret.comps_list[I][J+1:]]
+                        new_factors_list.append(ret.factors[I])
+                    elif isinstance(sub,Tensor):
+                        for K in range(len(sub.factors)):
+                            s = sub.comps_list[K]
+                            f = sub.factors[K]
+                            new_comps_list +=[ret.comps_list[I][:J] + s + ret.comps_list[I][J+1:]]
+                            new_factors_list.append(ret.factors[I]*f)
+                    else:
+                        raise NotImplementedError("Substitution must be a DifferentialForm, VectorFeild or Tensor.")
+                else:
+                    new_comps_list += [ret.comps_list[I]]
+                    new_factors += [ret.factors[I]]
+        elif isinstance(target,Tensor):
+            if len(target.factors) > 1: raise NotImplementedError("Cannot replace more than 1 term at a time")
+            new_comps_list = []
+            new_factors_list = []
+            for i in range(len(ret.comps_list)):
+                match_index = -1
+                for j in range(len(ret.comps_list[i])-len(target.comps_list[0])+1):
+                    if ret.comps_list[i][j:j+len(target.comps_list[0])] == target.comps_list[0]:
+                        match_index = j
+                        break
+                if match_index != -1:
+                    if isinstance(sub,Tensor):
+                        for k in range(len(sub.factors)):
+                            s = sub.comps_list[k]
+                            f = sub.factors[k]
+                            new_comps_list += [ret.comps_list[i][:match_index] + s + ret.comps_list[i][match_index+len(target.comps_list[0]):]]
+                            new_factors_list.append(ret.factors[i]*f/target.factors[0])
+                    elif isinstance(sub,(DifferentialForm,Tensor)):
+                        new_comps_list += [ret.comps_list[i][:match_index] + [sub] + ret.comps_list[i][match_index+len(target.comps_list[0]):]]
+                        new_factors_list.append(ret.factors[i]/target.factors[0])
+                    elif isinstance(sub,(float,int,AtomicExpr,Expr,Number)):
+                        new_comps_list +=[ret.comps_list[i][:match_index] + ret.comps_list[i][match_index+len(target.comps_list[0]):]]
+                        new_factors_list.append(ret.factors[i]*sub/target.factors[0])
+                else:
+                    new_comps_list += [ret.comps_list[i]]
+                    new_factors_list.append(ret.factors[i])
+            ret.factors = new_factors_list
+            ret.comps_list = new_comps_list
+        elif isinstance(target,dict):
+            for key in target:
+                ret = ret.subs(key,target[key],simp=False)
+        elif sub != None:
+            for i in range(len(self.factors)):
+                ret.factors[i] = ret.factors[i].subs(target,sub)
+        
+        if simp: ret = simplify(ret)
+        return ret
 
     _sympystr = _repr_latex_
     __repr__  = _repr_latex_
@@ -219,8 +281,8 @@ class DifferentialForm():
 
     def __add__(self,other):
         ret = DifferentialFormMul(self.manifold)
-        if isinstance(other,AtomicExpr) or isinstance(other,float) or isinstance(other,int):
-            ret.forms_list = [[self],[DifferentialForm(self.manifold,Integer(1),0)]]
+        if isinstance(other,(AtomicExpr,float,int,Number)):
+            ret.forms_list = [[self],[]]
             ret.factors = [1,other]
         elif isinstance(other,DifferentialForm):
             ret.forms_list = [[self],[other]]
@@ -321,10 +383,11 @@ class DifferentialFormMul():
             assert(self.manifold == other.manifold)
             ret.forms_list += self.forms_list + [[other]]
             ret.factors += self.factors + [1]
-        elif isinstance(other,(float,int)):
-            ret = self + DifferentialForm(self.manifold,Rational(other),0)
-        elif isinstance(other,AtomicExpr):
-            ret = self + DifferentialForm(self.manifold,other,0)
+        elif isinstance(other,(float,int,AtomicExpr,Number)):
+            ret.forms_list  = self.forms_list
+            ret.factors = self.factors
+            ret.forms_list += [[]]
+            ret.factors += [other]
         else:
             raise NotImplementedError
         ret = simplify(ret)
@@ -506,7 +569,7 @@ class DifferentialFormMul():
 
         return ret
     
-    def subs(self,target,sub=None):
+    def subs(self,target,sub=None,simp=True):
         ret = DifferentialFormMul(self.manifold)
         ret.factors = self.factors
         ret.forms_list = self.forms_list
@@ -517,7 +580,10 @@ class DifferentialFormMul():
             for i in range(len(ret.forms_list)):
                 if target in ret.forms_list[i]:
                     j = ret.forms_list[i].index(target)
-                    if isinstance(sub,DifferentialForm):
+                    if isinstance(sub,(float,int,AtomicExpr,Expr,Number)):
+                        new_forms_list +=[ret.forms_list[i][:j] + ret.forms_list[i][j+1:]]
+                        new_factors_list.append(ret.factors[i]*sub/target.factors[0])
+                    elif isinstance(sub,DifferentialForm):
                         new_forms_list += [ret.forms_list[i][:j] + [sub] + ret.forms_list[i][j+1:]]
                         new_factors_list.append(ret.factors[i])
                     elif isinstance(sub,DifferentialFormMul):
@@ -564,12 +630,12 @@ class DifferentialFormMul():
             ret.forms_list = new_forms_list
         elif isinstance(target,dict):
             for key in target:
-                ret = ret.subs(key,target[key])
+                ret = ret.subs(key,target[key],simp=False)
         elif sub != None:
             for i in range(len(self.factors)):
                 ret.factors[i] = ret.factors[i].subs(target,sub)
         
-        ret = simplify(ret)
+        if simp: ret = simplify(ret)
         return ret
 
     def to_tensor(self):
@@ -581,6 +647,12 @@ class DifferentialFormMul():
                 ret.comps_list += [[self.forms_list[i][p] for p in perm]]
                 ret.factors += [(-1)**parity*self.factors[i]/factorial(L)]
         return ret
+
+    def get_degree(self):
+        weights = [sum(map(lambda x: x.degree,f)) for f in self.forms_list]
+        if len(set(weights)) == 1:
+            return weights[0]
+        return None
 
 def remove_latex_arguments(object):
     if hasattr(object,'atoms'):
@@ -618,7 +690,7 @@ def DefVectorFields(manifold:Manifold,symbs:list):
     ret = None
     if isinstance(symbs,str):
         ret = DefVectorFields(manifold,list(symbols(symbs)))
-    elif isinstance(symbs,list):
+    elif isinstance(symbs,(list,tuple)):
         ret = [VectorField(manifold,s) for s in symbs]
     else:
         raise NotImplementedError
@@ -768,7 +840,7 @@ def TensorProduct(left,right):
             ret.comps_list = []
             for i in range(len(left.comps_list)):
                 for j in range(len(right.comps_list)):
-                    ret.comps_list += [left.comps_list[i]+right.coms_list[j]]
+                    ret.comps_list += [left.comps_list[i]+right.comps_list[j]]
                     ret.factors += [left.factors[i]*right.factors[j]]
         else:
             raise NotImplementedError
@@ -809,7 +881,11 @@ def Contract(left,right,*positions):
                 ret.factors += [left.factors[i]*right.factors[j]]
     ret.collect_comps()
     return ret
+
+def InvertFormDict(formdict:dict) -> dict:
+    if not isinstance(formdict,dict): raise TypeError("formdict must be of type dict.")
     
+
 def Hodge(form):
     # TODO: Implements Solver first
     # Allow basis to be generic 1-form and then solve for everything in terms of those

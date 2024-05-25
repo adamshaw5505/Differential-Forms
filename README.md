@@ -21,6 +21,7 @@ This is the list of possible implementation, in an approximate order of priority
 - [X] Generic Tensor Contractions
 - [ ] Implement substitution for Tensors
 - [ ] Hodge star given metric/frame (In Progress)
+- [ ] Fallback to symbolic Hodge star without basis
 - [ ] Solving 1-form simple linear equations
 - [ ] Vector Field Commutator
 
