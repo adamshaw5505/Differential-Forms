@@ -1,4 +1,4 @@
-from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita
+from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita, solve, Matrix, variations, factorial
 from sympy.physics.units.quantities import Quantity
 from IPython.display import Math
 from sympy.combinatorics import Permutation
@@ -524,7 +524,11 @@ class DifferentialFormMul():
         if str_str == "":
             return "0"
         return str_str
-    
+
+    def __getitem__(self,index):
+        if len(self.factors) == 0: return 0
+        return self.factors[index]
+
     _sympystr = _repr_latex_
 
     @property
@@ -654,6 +658,26 @@ class DifferentialFormMul():
             return weights[0]
         return None
 
+    def get_component_at_basis(self,basis=None):
+        basis_comp = basis
+        if isinstance(basis,DifferentialFormMul):
+            assert(len(basis.factors) == 1)
+            assert(self.get_degree() == basis.get_degree())
+            basis_comp = basis.forms_list[0]
+        elif isinstance(basis,DifferentialForm):
+            assert(self.get_degree() == 1)
+            basis_comp = basis
+        
+        for i in range(len(self.forms_list)):
+            f = self.forms_list[i]
+            if f == basis_comp:
+                return self.factors[i]
+        return 0
+
+
+    def simplify(self): 
+        return self._eval_simplify()
+
 def remove_latex_arguments(object):
     if hasattr(object,'atoms'):
         functions = object.atoms(Function)
@@ -684,6 +708,8 @@ def DefDifferentialForms(manifold:Manifold,symbs:list,degrees:list):
             ret = [DifferentialForm(manifold,s,degrees) for s in symbs]
     else:
         raise NotImplementedError
+    if isinstance(len,list) and len(ret) == 1:
+        return ret[0]
     return ret
 
 def DefVectorFields(manifold:Manifold,symbs:list):
@@ -694,12 +720,16 @@ def DefVectorFields(manifold:Manifold,symbs:list):
         ret = [VectorField(manifold,s) for s in symbs]
     else:
         raise NotImplementedError
+    if len(ret) == 1:
+        return ret[0]
     return ret
 
 def DefConstants(names:str)->symbols:
     """ Uses the Quantity function to create constant symbols. """
     names = re.sub(r'[\s]+', ' ', names)
-    return [Quantity(c) for c in names.split(' ')]
+    constants = [Quantity(c) for c in names.split(' ')]
+    if len(constants) == 1: return constants[0]
+    return constants
 
 def SetBasis(manifold:Manifold,basis:list,signature=1):
     assert(len(basis) == manifold.dimension)
@@ -882,11 +912,41 @@ def Contract(left,right,*positions):
     ret.collect_comps()
     return ret
 
-def InvertFormDict(formdict:dict) -> dict:
-    if not isinstance(formdict,dict): raise TypeError("formdict must be of type dict.")
+def FormsListInBasisMatrix(formslist:dict, basis=None) -> Matrix:
+    if basis == None:
+        if formslist[0].manifold.basis == None: raise NotImplementedError("Need to set a basis for the manifold.")
+        basis = formslist[0].manifold.basis
     
+    from itertools import chain
+    basis_comp_all = list(chain(*[list(chain(*(b.forms_list))) for b in basis]))
 
+    basis_comp = []
+    for bc in basis_comp_all:
+        if bc not in basis_comp: basis_comp.append(1*bc)
+
+    basis_comp_matrix = Matrix([[b.get_component_at_basis(bc) for bc in basis_comp] for b in basis])
+
+    basis_comp_matrix_inv = basis_comp_matrix.inv()
+    
+    form_matrix = Matrix([[f.get_component_at_basis(b) for b in basis_comp] for f in formslist])
+
+    return_matrix = form_matrix*basis_comp_matrix_inv
+
+    return return_matrix
+    
 def Hodge(form):
+    basis = form.manifold.basis
+    dim = form.manifold.dimension
+    degree = form.get_degree()
+
+    for left_index in variations(range(dim),degree):
+        left_index = list(left_index)
+        right_index_list = [i for i in range(dim) if i not in left_index]
+        display(left_index)
+        for right_index in variations(right_index_list,3):
+            display(right_index)
+
+
     # TODO: Implements Solver first
     # Allow basis to be generic 1-form and then solve for everything in terms of those
     # SetBasis([dt+dx,dt-dx,dy,dz]) and solve tmp_e0 = dt+dx, tmp_e1 = dt-dx and so on
@@ -916,3 +976,70 @@ def Hodge(form):
     # else:
     #     raise NotImplementedError
     # return ret
+
+def SelfDualTwoForms(tetrads:list)->list:
+    assert(len(tetrads)==4)
+    signature = tetrads[0].manifold.signature
+    sigma = 1 if signature == 1 else I
+    e0,e1,e2,e3 = tetrads
+    S1 = simplify(sigma*e0*e1-e2*e3)
+    S2 = simplify(sigma*e0*e2-e3*e1)
+    S3 = simplify(sigma*e0*e3-e1*e2)
+    return [S1,S2,S3]
+
+def SelfDualConnection(twoforms:list,basis=None):
+    assert(len(twoforms) == 3)
+    S1,S2,S3 = twoforms
+    if basis == None:
+        if twoforms[0].manifold.basis == None:
+            raise NotImplementedError("Basis unkown, set Manifold basis or pass basis as argument")
+        basis = twoforms[0].manifold.basis
+
+    A_symbols = symbols(r"A^{1:4}_{0:4}",real=True)
+
+    A1 = sum([A_symbols[(1-1)*4+I]*basis[I] for I in range(4)])
+    A2 = sum([A_symbols[(2-1)*4+I]*basis[I] for I in range(4)])
+    A3 = sum([A_symbols[(3-1)*4+I]*basis[I] for I in range(4)])
+    
+    dAS1 = simplify(d(S1) + A2*S3-A3*S2)
+    dAS2 = simplify(d(S2) + A3*S1-A1*S3)
+    dAS3 = simplify(d(S3) + A1*S2-A2*S1)
+    
+    A_solution = solve(dAS1.factors+dAS2.factors+dAS3.factors,A_symbols)
+    
+    A1 = simplify(A1.subs(A_solution))
+    A2 = simplify(A2.subs(A_solution))
+    A3 = simplify(A3.subs(A_solution))
+
+    return A1,A2,A3
+
+def SelfDualCurvature(connections:list)->list:
+    assert(len(connections) == 3)
+    A1,A2,A3 = connections
+
+    F1 = d(A1) + A2*A3
+    F2 = d(A2) + A3*A1
+    F3 = d(A3) + A1*A2
+
+    return F1,F2,F3
+
+def SelfDualWeylMatrix(curvatures:list,twoforms:list)->Matrix:
+    S1,S2,S3 = twoforms
+    sigma = 1 if S1.manifold.signature == 1 else I
+    volS = (S1*S1+S2*S2+S3*S3).factors[0]/sigma
+
+    W = Matrix([[(f*s)[0]/(2*volS) for s in twoforms] for f in curvatures])
+
+    return W
+
+def RicciTwoForm(curvatures:list,twoforms:list,weyl:Matrix = None):
+    if weyl == None:
+        weyl = SelfDualWeylMatrix(curvatures, twoforms)
+    F1,F2,F3 = curvatures
+    S1,S2,S3 = twoforms
+
+    R1 = F1 - weyl[0,0]*S1 - weyl[0,1]*S2 - weyl[0,2]*S3
+    R2 = F2 - weyl[1,0]*S1 - weyl[1,1]*S2 - weyl[1,2]*S3
+    R3 = F3 - weyl[2,0]*S1 - weyl[2,1]*S2 - weyl[2,2]*S3
+
+    return [R1,R2,R3]
