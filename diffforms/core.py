@@ -8,11 +8,11 @@ import numbers
 from math import factorial, prod
 
 class Manifold():
-    def __init__(self,label,dimension):
+    def __init__(self,label,dimension,signature=1):
         self.label = label
         assert(dimension > 0)
         self.dimension = dimension
-        self.signature = None
+        self.signature = signature
         self.basis = None
     
     def __eq__(self,other):
@@ -118,6 +118,9 @@ class Tensor():
 
     def __mul__(self,other):
         return TensorProduct(self,other)
+
+    def __rmul__(self,other):
+        return TensorProduct(other,self)
 
     def _repr_latex_(self):
         latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
@@ -244,6 +247,10 @@ class Tensor():
         
         if simp: ret = simplify(ret)
         return ret
+
+    def get_factor(self,index):
+        if len(self.factors) == 0: return 0
+        return self.factors[index]
 
     _sympystr = _repr_latex_
     __repr__  = _repr_latex_
@@ -879,36 +886,39 @@ def TensorProduct(left,right):
     ret.collect_comps()
     return ret
 
-def Contract(left,right,*positions):
-    if not (isinstance(left,Tensor) and isinstance(right,Tensor)): raise TypeError("First two arguments must be Tensor.")
-    assert(left.manifold == right.manifold)
-    left_weight = left.get_weight()
-    right_weight = right.get_weight()
-    if left_weight == (None) or right_weight == (None): raise TypeError("Tensors must be of consistent types")
+def Contract(tensor,*positions):
+    if not isinstance(tensor,Tensor): raise TypeError("First argument must be a Tensor.")
+    tensor_weight = tensor.get_weight()
+    if tensor_weight == (None): raise TypeError("Tensors must be of consistent types")
     p1_list = []
     p2_list = []
     for p in positions:
         p1,p2 = p
         p1_list += [p1]
         p2_list += [p2]
-        if p1 > len(left_weight) or p2 > len(right_weight) or p1 < 0 or p2 < 0: raise IndexError("Contraction index out of range.")
-        if left_weight[p1]*right_weight[p2] == 1: raise NotImplementedError("Tensor Contraction must be between vector fields and differential forms.")
-    ret = Tensor(left.manifold)
-    for i in range(len(left.factors)):
-        for j in range(len(right.factors)):
-            left_poped = [e for k,e in enumerate(left.comps_list[i]) if k in p1_list]
-            right_poped = [e for k,e in enumerate(right.comps_list[j]) if k in p2_list]
-            left_without = [e for k,e in enumerate(left.comps_list[i]) if k not in p1_list]
-            right_without = [e for k,e in enumerate(right.comps_list[j]) if k not in p2_list]
-            sign = 1
-            for k in range(len(left_poped)):
-                if isinstance(left_poped[k],DifferentialForm):
-                    sign *= left_poped[k].insert(right_poped[k])
-                else:
-                    sign *= right_poped[k].insert(left_poped[k])
-            if sign != 0:
-                ret.comps_list += [left_without + right_without]
-                ret.factors += [left.factors[i]*right.factors[j]]
+        if p1 > len(tensor_weight) or p2 > len(tensor_weight) or p1 < 0 or p2 < 0: raise IndexError("Contraction index out of range.")
+        if tensor_weight[p1]*tensor_weight[p2] == 1: raise NotImplementedError("Tensor Contraction must be between vector fields and differential forms components.")
+    ret = Tensor(tensor.manifold)
+    max_index = len(tensor.factors)
+    for i in range(max_index):
+        left_popped = []
+        right_popped = []
+        total_without = []
+        for k,e in enumerate(tensor.comps_list[i]):
+            if k in p1_list: left_popped.append(e)
+            if k in p2_list: right_popped.append(e)
+            if not k in p1_list and not k in p2_list:
+                total_without.append(e)
+        
+        sign = 1
+        for k in range(len(left_popped)):
+            if isinstance(left_popped[k],DifferentialForm):
+                sign *= left_popped[k].insert(right_popped[k])
+            else:
+                sign *= right_popped[k].insert(left_popped[k])
+        if sign != 0:
+            ret.comps_list += [total_without]
+            ret.factors += [tensor.factors[i]*sign]
     ret.collect_comps()
     return ret
 
@@ -977,17 +987,18 @@ def Hodge(form):
     #     raise NotImplementedError
     # return ret
 
-def SelfDualTwoForms(tetrads:list)->list:
+def SelfDualTwoForms(tetrads:list,orientation=1)->list:
     assert(len(tetrads)==4)
     signature = tetrads[0].manifold.signature
     sigma = 1 if signature == 1 else I
     e0,e1,e2,e3 = tetrads
-    S1 = simplify(sigma*e0*e1-e2*e3)
-    S2 = simplify(sigma*e0*e2-e3*e1)
-    S3 = simplify(sigma*e0*e3-e1*e2)
+    assert(abs(orientation) == 1)
+    S1 = simplify(sigma*e0*e1-orientation*e2*e3)
+    S2 = simplify(sigma*e0*e2-orientation*e3*e1)
+    S3 = simplify(sigma*e0*e3-orientation*e1*e2)
     return [S1,S2,S3]
 
-def SelfDualConnection(twoforms:list,basis=None):
+def SelfDualConnection(twoforms:list,basis=None)->list:
     assert(len(twoforms) == 3)
     S1,S2,S3 = twoforms
     if basis == None:
@@ -1023,7 +1034,7 @@ def SelfDualCurvature(connections:list)->list:
 
     return F1,F2,F3
 
-def SelfDualWeylMatrix(curvatures:list,twoforms:list)->Matrix:
+def SelfDualCurvatureMatrix(curvatures:list,twoforms:list)->Matrix:
     S1,S2,S3 = twoforms
     sigma = 1 if S1.manifold.signature == 1 else I
     volS = (S1*S1+S2*S2+S3*S3).factors[0]/sigma
