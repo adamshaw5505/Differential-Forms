@@ -14,6 +14,7 @@ class Manifold():
         self.dimension = dimension
         self.signature = signature
         self.basis = None
+        self.tetrads = None
     
     def __eq__(self,other):
         if isinstance(other,Manifold):
@@ -742,6 +743,9 @@ def SetBasis(manifold:Manifold,basis:list,signature=1):
     assert(len(basis) == manifold.dimension)
     manifold.basis = basis
     manifold.signature = signature
+
+def SetTetrads(manifold:Manifold,tetrads:list):
+    manifold.tetrads = tetrads
 
 def d(form,manifold=None):
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
