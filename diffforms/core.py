@@ -5,7 +5,7 @@ from sympy.combinatorics import Permutation
 from itertools import permutations
 import re
 import numbers
-from math import factorial, prod
+from math import factorial, prod 
 
 class Manifold():
     def __init__(self,label,dimension,signature=1):
@@ -77,7 +77,7 @@ class VectorField():
     _latex   = _repr_latex_
     _print   = _repr_latex_
 
-class Tensor():
+class Tensor(): 
     def __init__(self, manifold:Manifold):
         self.__sympy__ = True
         self.manifold = manifold
@@ -370,7 +370,6 @@ class DifferentialForm():
             return ret
 
 class DifferentialFormMul():
-
     def __init__(self,manifold:Manifold,form:DifferentialForm=None,factor:AtomicExpr=None):
         self.__sympy__ = True
         if form == None:
@@ -398,7 +397,10 @@ class DifferentialFormMul():
             ret.factors += [other]
         else:
             raise NotImplementedError
-        ret = simplify(ret)
+        ret.remove_squares()
+        ret.remove_above_top()
+        ret.sort_form_sums()
+        ret.collect_forms()
         return ret
     
     def __mul__(self,other): 
@@ -581,7 +583,7 @@ class DifferentialFormMul():
 
         return ret
     
-    def subs(self,target,sub=None,simp=True):
+    def subs(self,target,sub=None):
         ret = DifferentialFormMul(self.manifold)
         ret.factors = self.factors
         ret.forms_list = self.forms_list
@@ -642,12 +644,15 @@ class DifferentialFormMul():
             ret.forms_list = new_forms_list
         elif isinstance(target,dict):
             for key in target:
-                ret = ret.subs(key,target[key],simp=False)
+                ret = ret.subs(key,target[key])
         elif sub != None:
             for i in range(len(self.factors)):
                 ret.factors[i] = ret.factors[i].subs(target,sub)
         
-        if simp: ret = simplify(ret)
+        ret.remove_squares()
+        ret.remove_above_top()
+        ret.sort_form_sums()
+        ret.collect_forms()
         return ret
 
     def to_tensor(self):
@@ -682,9 +687,14 @@ class DifferentialFormMul():
                 return self.factors[i]
         return 0
 
-
     def simplify(self): 
         return self._eval_simplify()
+    
+    def expand(self):
+        ret = DifferentialFormMul(self.manifold)
+        ret.factors = [f.expand() for f in self.factors]
+        ret.forms_list = self.forms_list
+        return ret
 
 def remove_latex_arguments(object):
     if hasattr(object,'atoms'):
@@ -818,7 +828,10 @@ def WedgeProduct(left,right):
     else:
         raise NotImplementedError
     
-    ret = simplify(ret)
+    ret.remove_squares()
+    ret.remove_above_top()
+    ret.sort_form_sums()
+    ret.collect_forms()
     return ret
 
 def TensorProduct(left,right):
