@@ -252,6 +252,13 @@ class Tensor():
     def get_factor(self,index):
         if len(self.factors) == 0: return 0
         return self.factors[index]
+    
+    def simplify(self):
+        ret = Tensor(self.manifold)
+        ret.factors = [f.simplify() for f in self.factors]
+        ret.comps_list = self.comps_list
+        ret.collect_comps()
+        return ret
 
     _sympystr = _repr_latex_
     __repr__  = _repr_latex_
@@ -742,10 +749,10 @@ def DefVectorFields(manifold:Manifold,symbs:list):
         return ret[0]
     return ret
 
-def DefConstants(names:str)->symbols:
+def DefConstants(names:str, **assumptions)->symbols:
     """ Uses the Quantity function to create constant symbols. """
     names = re.sub(r'[\s]+', ' ', names)
-    constants = [Quantity(c) for c in names.split(' ')]
+    constants = [Quantity(c,**assumptions) for c in names.split(' ') if c != '']
     if len(constants) == 1: return constants[0]
     return constants
 
