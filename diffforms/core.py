@@ -13,8 +13,13 @@ class Manifold():
         assert(dimension > 0)
         self.dimension = dimension
         self.signature = signature
+        self.coords = None
         self.basis = None
         self.tetrads = None
+        self.metric = None
+        self.metric_inv = None
+        self.vectors = None
+        self.christoffel_symbols = None
     
     def __eq__(self,other):
         if isinstance(other,Manifold):
@@ -22,6 +27,88 @@ class Manifold():
         return False
     
     def __len__(self): return self.dimension
+
+    def set_coordinates(self,coordinates,signature=1):
+        assert(len(coordinates) == self.dimension)
+        self.coords = coordinates
+        self.basis = [DifferentialForm(self,c,0).d for c in coordinates]
+        self.signature = signature
+        self.vectors = DefVectorFields(self,coordinates)
+    
+    def set_tetrads(self,tetrads):
+        self.tetrads = tetrads
+        tetrads_D = [e.to_tensor() for e in tetrads]
+        self.metric = tetrads_D[0]*tetrads_D[0]
+        for i in range(1,len(tetrads)):
+            self.metric += tetrads_D[i]*tetrads_D[i]
+        tetrad_matrix = Matrix([[e.insert(v)[0] for v in self.vectors] for e in tetrads])
+        tetrad_matrix_inv = tetrad_matrix.inv().T
+
+        self.tetrads_inv = [sum([tetrad_matrix_inv[I,u]*self.vectors[u] for u in range(self.dimension)]) for I in range(self.dimension)]
+        self.metric_inv = self.tetrads_inv[0]*self.tetrads_inv[0]
+        for i in range(1,self.dimension):
+            self.metric_inv += self.tetrads_inv[i]*self.tetrads_inv[i]
+        
+        T_DDD = PartialDerivative(self.metric)
+        g_UU_T_DDD = (self.metric_inv*T_DDD)
+
+        Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
+        Gamma_UDD_2 = PermuteIndices(Gamma_UDD_1, (0,2,1))
+        Gamma_UDD_3 = Contract(g_UU_T_DDD,(1,2))
+
+        self.christoffel_symbols = ((Gamma_UDD_1 + Gamma_UDD_2 - Gamma_UDD_3)/2).simplify()
+
+    def get_basis(self): return self.basis
+    def get_vectors(self): return self.vectors
+    def get_metric(self): return self.metric
+    def get_inverse_metric(self): return self.metric_inv
+    def get_christoffel_symbols(self): return self.christoffel_symbols
+
+    def get_selfdual_twoforms(self,orientation=1):
+        assert(len(self.tetrads)==4)
+        sigma = 1 if self.signature == 1 else I
+        e0,e1,e2,e3 = self.tetrads
+        S1 = simplify(sigma*e0*e1-orientation*e2*e3)
+        S2 = simplify(sigma*e0*e2-orientation*e3*e1)
+        S3 = simplify(sigma*e0*e3-orientation*e1*e2)
+        self.selfdual_twoforms = [S1,S2,S3]
+        return S1,S2,S3
+    
+    def get_selfdual_connections(self,twoforms):
+            S1,S2,S3 = twoforms
+            if self.basis == None: raise NotImplementedError("Basis unknown, set Manifold basis or pass basis as argument")
+
+            A_symbols = symbols(r"A^{1:4}_{0:4}",real=True)
+
+            A1 = sum([A_symbols[(1 -1)*4 + I]*self.basis[I] for I in range(4)])
+            A2 = sum([A_symbols[(2 -1)*4 + I]*self.basis[I] for I in range(4)])
+            A3 = sum([A_symbols[(3 -1)*4 + I]*self.basis[I] for I in range(4)])
+
+            dAS1 = (d(S1) + A2*S3-A3*S2).simplify()
+            dAS2 = (d(S2) + A3*S1-A1*S3).simplify()
+            dAS3 = (d(S3) + A1*S2-A2*S1).simplify()
+
+            A_solution = solve(dAS1.factors+dAS2.factors+dAS3.factors,A_symbols)
+
+            A1 = A1.subs(A_solution).simplify()
+            A2 = A2.subs(A_solution).simplify()
+            A3 = A3.subs(A_solution).simplify()
+
+            return A1,A2,A3
+
+    def get_selfdual_curvatures(self,connections):
+        A1,A2,A3 = connections
+        F1 = d(A1) + A2*A3
+        F2 = d(A2) + A3*A1
+        F3 = d(A3) + A1*A2
+        return F1,F2,F3
+
+    def get_selfdual_curvature_matrix(self,twoforms):
+        S1,S2,S3 = twoforms
+        sigma = 1 if S1.manifold.signature == 1 else I
+        volS = (S1*S1+S2*S2+S3*S3)[0]/sigma
+        W = Matrix([[(f*s)[0]/(2*volS) for s in twoforms] for f in curvatures])
+        return W
 
 class VectorField():
     def __init__(self,manifold:Manifold,symbol):
@@ -100,13 +187,16 @@ class Tensor():
         elif isinstance(other,DifferentialFormMul):
             return self + other.to_tensor()
         elif isinstance(other,float) or isinstance(other,int):
-            ret = self + DifferentialForm(Rational(other),0)
+            ret = self + DifferentialForm(self.manifold,Rational(other),0)
         elif isinstance(other,AtomicExpr):
-            ret = self + DifferentialForm(other,0)
+            ret = self + DifferentialForm(self.manifold,other,0)
         else:
             raise NotImplementedError
         ret.collect_comps()
         return ret
+    
+    def __radd__(self,other):
+        return self + other
 
     def __sub__(self,other):
         return self + (-other)
@@ -122,6 +212,9 @@ class Tensor():
 
     def __rmul__(self,other):
         return TensorProduct(other,self)
+
+    def __div__(self,other): return TensorProduct(self,1/Number(other))
+    def __truediv__(self,other): return TensorProduct(self,1/Number(other))
 
     def _repr_latex_(self):
         latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
@@ -351,6 +444,10 @@ class DifferentialForm():
         else:
             raise NotImplementedError
 
+    def __getitem__(self,index):
+        if len(self.factors) == 0: return 0
+        return self.factors[index]
+
     @property
     def d(self):
         if self.exact: return DifferentialForm(self.manifold,Number(0),self.degree+1,exact=True)
@@ -408,6 +505,9 @@ class DifferentialFormMul():
         ret.remove_above_top()
         ret.sort_form_sums()
         ret.collect_forms()
+
+        if ret.factors == [] and ret.forms_list == []: return 0
+        elif ret.forms_list == [[]]: return ret.factors[0]
         return ret
     
     def __mul__(self,other): 
@@ -435,7 +535,7 @@ class DifferentialFormMul():
 
     def __eq__(self,other):
         if isinstance(other,DifferentialForm) and self.factors == [1] and len(self.forms_list[0]) == 1: return other == self.forms_list[0][0]
-        elif not isinstance(DifferentialFormMul): raise NotImplementedError
+        elif not isinstance(other,DifferentialFormMul): raise NotImplementedError
         elif other.factors != self.factors: return False
         elif other.forms_list != self.forms_list: return False
         return True
@@ -756,14 +856,6 @@ def DefConstants(names:str, **assumptions)->symbols:
     if len(constants) == 1: return constants[0]
     return constants
 
-def SetBasis(manifold:Manifold,basis:list,signature=1):
-    assert(len(basis) == manifold.dimension)
-    manifold.basis = basis
-    manifold.signature = signature
-
-def SetTetrads(manifold:Manifold,tetrads:list):
-    manifold.tetrads = tetrads
-
 def d(form,manifold=None):
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
         return form.d
@@ -784,6 +876,43 @@ def d(form,manifold=None):
         return ret
 
     raise NotImplementedError
+
+def PartialDerivative(tensor,manifold=None):
+    if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
+        return PartialDerivative((1*tensor).to_tensor(),manifold)
+    elif isinstance(tensor,(AtomicExpr,Expr,Function)):
+        if manifold == None: raise NotImplementedError("Manifold cannot be None for Scalar input")
+        ret = Tensor(manifold)
+        for i in range(manifold.dimension):
+            ret.comps_list += [[manfiold.basis[i]]]
+            ret.factors += [tensor.diff(manifold.coords[i])]
+        ret.collect_comps()
+        return ret
+    elif isinstance(tensor,Tensor):
+        ret = Tensor(tensor.manifold)
+        man = tensor.manifold
+        for i in range(man.dimension):
+            for j in range(len(tensor.factors)):
+                ret.comps_list += [[man.basis[i]]+tensor.comps_list[j]]
+                ret.factors += [tensor.factors[j].diff(man.coords[i])]
+        ret.collect_comps()
+        return ret
+
+def CovariantDerivative(tensor,manfiold=None):
+    if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
+        return CovariantDerivative((1*tensor).to_tensor(),manifold)
+    elif isinstance(tensor,(AtomicExpr,Expr,Function)):
+        if manifold == None: raise NotImplementedError("Manifold cannot be None for Scalar input")
+        ret = Tensor(manifold)
+        for i in range(manifold.dimension):
+            ret.comps_list += [[manfiold.basis[i]]]
+            ret.factors += [tensor.diff(manifold.coords[i])]
+        ret.collect_comps()
+        return ret
+    elif isinstance(tensor,Tensor):
+        # TODO: Implement system based off of weight
+        pass
+
 
 def WedgeProduct(left,right):
     ret = None
@@ -839,6 +968,9 @@ def WedgeProduct(left,right):
     ret.remove_above_top()
     ret.sort_form_sums()
     ret.collect_forms()
+
+    if ret.factors == [] and ret.forms_list == []: return 0
+    elif ret.forms_list == [[]]: return ret.factors[0]
     return ret
 
 def TensorProduct(left,right):
@@ -940,9 +1072,24 @@ def Contract(tensor,*positions):
                 sign *= left_popped[k].insert(right_popped[k])
             else:
                 sign *= right_popped[k].insert(left_popped[k])
+        if isinstance(sign,DifferentialFormMul):
+            display(sign.forms_list)
+            display(sign.factors)
         if sign != 0:
             ret.comps_list += [total_without]
             ret.factors += [tensor.factors[i]*sign]
+    ret.collect_comps()
+    return ret
+
+def PermuteIndices(tensor,new_order):
+    t_weight = tensor.get_weight()
+    if (len(new_order)!=len(t_weight)): raise NotImplementedError("New index order must contain every index")
+    if set(new_order) != set(range(len(t_weight))): raise TypeError("New index order does not contain every index once and only once")
+    ret = Tensor(tensor.manifold)
+    for i in range(len(tensor.factors)):
+        ret.factors += [tensor.factors[i]]
+        ret.comps_list += [[tensor.comps_list[i][j] for j in new_order]]
+    
     ret.collect_comps()
     return ret
 
@@ -1011,63 +1158,6 @@ def Hodge(form):
     #     raise NotImplementedError
     # return ret
 
-def SelfDualTwoForms(tetrads:list,orientation=1)->list:
-    assert(len(tetrads)==4)
-    signature = tetrads[0].manifold.signature
-    sigma = 1 if signature == 1 else I
-    e0,e1,e2,e3 = tetrads
-    assert(abs(orientation) == 1)
-    S1 = simplify(sigma*e0*e1-orientation*e2*e3)
-    S2 = simplify(sigma*e0*e2-orientation*e3*e1)
-    S3 = simplify(sigma*e0*e3-orientation*e1*e2)
-    return [S1,S2,S3]
-
-def SelfDualConnection(twoforms:list,basis=None)->list:
-    assert(len(twoforms) == 3)
-    S1,S2,S3 = twoforms
-    if basis == None:
-        if twoforms[0].manifold.basis == None:
-            raise NotImplementedError("Basis unkown, set Manifold basis or pass basis as argument")
-        basis = twoforms[0].manifold.basis
-
-    A_symbols = symbols(r"A^{1:4}_{0:4}",real=True)
-
-    A1 = sum([A_symbols[(1-1)*4+I]*basis[I] for I in range(4)])
-    A2 = sum([A_symbols[(2-1)*4+I]*basis[I] for I in range(4)])
-    A3 = sum([A_symbols[(3-1)*4+I]*basis[I] for I in range(4)])
-    
-    dAS1 = simplify(d(S1) + A2*S3-A3*S2)
-    dAS2 = simplify(d(S2) + A3*S1-A1*S3)
-    dAS3 = simplify(d(S3) + A1*S2-A2*S1)
-    
-    A_solution = solve(dAS1.factors+dAS2.factors+dAS3.factors,A_symbols)
-    
-    A1 = simplify(A1.subs(A_solution))
-    A2 = simplify(A2.subs(A_solution))
-    A3 = simplify(A3.subs(A_solution))
-
-    return A1,A2,A3
-
-def SelfDualCurvature(connections:list)->list:
-    assert(len(connections) == 3)
-    A1,A2,A3 = connections
-
-    F1 = d(A1) + A2*A3
-    F2 = d(A2) + A3*A1
-    F3 = d(A3) + A1*A2
-
-    return F1,F2,F3
-
-def SelfDualCurvatureMatrix(curvatures:list,twoforms:list)->Matrix:
-    S1,S2,S3 = twoforms
-    sigma = 1 if S1.manifold.signature == 1 else I
-    volS = (S1*S1+S2*S2+S3*S3).factors[0]/sigma
-
-    W = Matrix([[(f*s)[0]/(2*volS) for s in twoforms] for f in curvatures])
-
-    return W
-
-def RicciTwoForm(curvatures:list,twoforms:list,weyl:Matrix = None):
     if weyl == None:
         weyl = SelfDualWeylMatrix(curvatures, twoforms)
     F1,F2,F3 = curvatures
