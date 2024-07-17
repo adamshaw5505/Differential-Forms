@@ -41,7 +41,7 @@ class Manifold():
         self.metric = tetrads_D[0]*tetrads_D[0]
         for i in range(1,len(tetrads)):
             self.metric += tetrads_D[i]*tetrads_D[i]
-        tetrad_matrix = Matrix([[e.insert(v)[0] for v in self.vectors] for e in tetrads])
+        tetrad_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in tetrads])
         tetrad_matrix_inv = tetrad_matrix.inv().T
 
         self.tetrads_inv = [sum([tetrad_matrix_inv[I,u]*self.vectors[u] for u in range(self.dimension)]) for I in range(self.dimension)]
@@ -53,7 +53,7 @@ class Manifold():
         g_UU_T_DDD = (self.metric_inv*T_DDD)
 
         Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
-        Gamma_UDD_2 = PermuteIndices(Gamma_UDD_1, (0,2,1))
+        Gamma_UDD_2 = Gamma_UDD_1[0,2,1]
         Gamma_UDD_3 = Contract(g_UU_T_DDD,(1,2))
 
         self.christoffel_symbols = ((Gamma_UDD_1 + Gamma_UDD_2 - Gamma_UDD_3)/2).simplify()
@@ -103,11 +103,11 @@ class Manifold():
         F3 = d(A3) + A1*A2
         return F1,F2,F3
 
-    def get_selfdual_curvature_matrix(self,twoforms):
+    def get_selfdual_curvature_matrix(self,curvatures,twoforms):
         S1,S2,S3 = twoforms
         sigma = 1 if S1.manifold.signature == 1 else I
-        volS = (S1*S1+S2*S2+S3*S3)[0]/sigma
-        W = Matrix([[(f*s)[0]/(2*volS) for s in twoforms] for f in curvatures])
+        volS = (S1*S1+S2*S2+S3*S3).get_factor(0)/sigma
+        W = Matrix([[(f*s).get_factor(0)/(2*volS) for s in twoforms] for f in curvatures])
         return W
 
 class VectorField():
@@ -215,6 +215,13 @@ class Tensor():
 
     def __div__(self,other): return TensorProduct(self,1/Number(other))
     def __truediv__(self,other): return TensorProduct(self,1/Number(other))
+
+    def __getitem__(self,indices):
+        s_weight = self.get_weight()
+        if len(indices) != len(s_weight): raise IndexError("Indices not of correct form")
+        if set(list(indices)) != set(range(len(s_weight))): raise IndexError("Each index must appear once and only once")
+        if list(indices) == list(range(len(s_weight))): return self
+        return PermuteIndices(self,list(indices))
 
     def _repr_latex_(self):
         latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
@@ -422,6 +429,8 @@ class DifferentialForm():
     def _repr_latex_(self): return self.symbol._repr_latex_()
 
     def __hash__(self): return hash((self.symbol,self.degree))
+
+    def to_tensor(self): return (Number(1)*self).to_tensor()
     
     __repr__ = _repr_latex_
     _latex   = _repr_latex_
@@ -437,7 +446,7 @@ class DifferentialForm():
     def insert(self,vector:VectorField):
         if isinstance(vector,VectorField):
             if self.symbol == vector.symbol or str(self.symbol) == "d\\left("+str(vector.symbol)+"\\right)": return 1
-            else: return 0
+            else: return Number(0)
         elif isinstance(vector,Tensor):
             if vector.is_vectorfield():
                 return sum([vector.factors[i]*self.insert(vector.comps_list[i][0]) for i in range(len(vector.factors))])
@@ -557,11 +566,20 @@ class DifferentialFormMul():
                         ret.factors += [self.factors[i]*sign]
                         break
                     sign *= (-1)**self.forms_list[i][j].degree 
-            return ret
         elif isinstance(other,Tensor) and other.is_vectorfield():
-            return sum([other.factors[i]*self.insert(other.comps_list[i][0]) for i in range(len(other.factors))])
+            ret = sum([other.factors[i]*self.insert(other.comps_list[i][0]) for i in range(len(other.factors))])
+            return 
         else:
-            raise NotImplementedError
+            raise NotImplementedError("Tensor inserted must be a vector field")
+
+        if ret.forms_list == [[]]: return ret.factors[0]
+        if ret.forms_list == []: return Number(0)
+
+        ret.remove_squares()
+        ret.remove_above_top()
+        ret.sort_form_sums()
+        ret.collect_forms()
+        return ret
 
     def remove_squares(self):
         i = 0
@@ -636,6 +654,11 @@ class DifferentialFormMul():
             return "$0$"
         return latex_str
 
+    def get_factor(self,index):
+        if len(self.factors) == 0: return 0
+        return self.factors[index]
+        
+
     def __str__(self):
         str_str = "+".join([ "(" + str(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))])
         if str_str == "":
@@ -643,9 +666,8 @@ class DifferentialFormMul():
         return str_str
 
     def __getitem__(self,index):
-        if len(self.factors) == 0: return 0
-        return self.factors[index]
-
+        #TODO: Make this permute the differential forms not index the components
+        pass
     _sympystr = _repr_latex_
 
     @property
@@ -898,23 +920,38 @@ def PartialDerivative(tensor,manifold=None):
         ret.collect_comps()
         return ret
 
-def CovariantDerivative(tensor,manfiold=None):
+def CovariantDerivative(tensor,manifold=None):
     if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
-        return CovariantDerivative((1*tensor).to_tensor(),manifold)
+        return CovariantDerivative((Number(1)*tensor).to_tensor(),manifold)
+    elif isinstance(tensor,VectorField):
+        return CovariantDerivative(Number(1)*tensor)
     elif isinstance(tensor,(AtomicExpr,Expr,Function)):
         if manifold == None: raise NotImplementedError("Manifold cannot be None for Scalar input")
         ret = Tensor(manifold)
         for i in range(manifold.dimension):
-            ret.comps_list += [[manfiold.basis[i]]]
+            ret.comps_list += [[manifold.basis[i]]]
             ret.factors += [tensor.diff(manifold.coords[i])]
         ret.collect_comps()
         return ret
     elif isinstance(tensor,Tensor):
-        # TODO: Implement system based off of weight
-        pass
+        t_weight = tensor.get_weight()
+        Gamma = tensor.manifold.christoffel_symbols
+        Gamma_tensor = Gamma*tensor
+        CD_tensor = PartialDerivative(tensor)
+        for i in range(len(t_weight)):
+            if t_weight[i] == -1:
+                # print([0,i+1]+[j for j in  list(range(1,len(t_weight)+1)) if j != i+1])
+                index_list = [0] + list(range(2,len(t_weight)+1))
+                index_list.insert(i+1,1)
+                CD_tensor += -Contract(Gamma_tensor,(0,3+i))[*index_list]
+            elif t_weight[i] == 1:
+                index_list = list(range(1,len(t_weight)+1))
+                index_list.insert(i+1,0)
+                CD_tensor += Contract(Gamma_tensor,(2,3+i))[index_list]
+        return CD_tensor
 
 
-def WedgeProduct(left,right):
+def WedgeProduct(left,right,debug=False):
     ret = None
     if isinstance(left,(int,float,Number,AtomicExpr,Expr)):
         if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
@@ -969,8 +1006,9 @@ def WedgeProduct(left,right):
     ret.sort_form_sums()
     ret.collect_forms()
 
-    if ret.factors == [] and ret.forms_list == []: return 0
-    elif ret.forms_list == [[]]: return ret.factors[0]
+    if ret.factors == [] and ret.forms_list == []: 
+        ret.factors = [Number(0)]
+        ret.forms_list = [[]]
     return ret
 
 def TensorProduct(left,right):
@@ -1079,6 +1117,8 @@ def Contract(tensor,*positions):
             ret.comps_list += [total_without]
             ret.factors += [tensor.factors[i]*sign]
     ret.collect_comps()
+    if ret.comps_list ==[[]]: return ret.factors[0]
+    if ret.comps_list == []: return Number(0)
     return ret
 
 def PermuteIndices(tensor,new_order):
