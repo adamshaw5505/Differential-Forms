@@ -360,6 +360,32 @@ class Tensor():
         ret.collect_comps()
         return ret
 
+    def conjugate(self):
+        ret = Tensor(self.manifold)
+        ret.factors = [f.conjugate() for f in self.factors]
+        ret.comps_list = self.comps_list
+        ret.collect_comps()
+        return ret
+
+    def to_differentialform(self):
+        if set(self.get_weight()) != set([-1]): raise TypeError("Tensor cannot be projected to a differential form")
+        ret = DifferentialFormMul(self.manifold)
+        ret.factors = self.factors
+        ret.forms_list = self.comps_list
+
+        ret.remove_squares()
+        ret.remove_above_top()
+        ret.sort_form_sums()
+        ret.collect_forms()
+
+        if ret.factors == [] and ret.forms_list == []: 
+            ret.factors = [Number(0)]
+            ret.forms_list = [[]]
+        
+        return ret
+
+        
+
     _sympystr = _repr_latex_
     __repr__  = _repr_latex_
     _latex    = _repr_latex_
@@ -658,6 +684,11 @@ class DifferentialFormMul():
         if len(self.factors) == 0: return 0
         return self.factors[index]
         
+    def conjugate(self):
+        ret = DifferentialFormMul(self.manifold)
+        ret.factors = [f.conjugate() for f in self.factors]
+        ret.forms_list = self.forms_list
+        return ret
 
     def __str__(self):
         str_str = "+".join([ "(" + str(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))])
