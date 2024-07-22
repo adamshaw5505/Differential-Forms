@@ -4,3 +4,4 @@ diffform/__pycache__/*
 /.vscode/
 diffforms/tests/*
 /build/
+build/lib/diffforms/core.py

@@ -5,7 +5,7 @@ from sympy.combinatorics import Permutation
 from itertools import permutations
 import re
 import numbers
-from math import factorial, prod 
+from math import factorial, prod
 
 class Manifold():
     def __init__(self,label,dimension,signature=1):
@@ -997,7 +997,6 @@ def CovariantDerivative(tensor,manifold=None):
                 index_list.insert(i+1,0)
                 CD_tensor += Contract(Gamma_tensor,(2,3+i))[index_list]
         return CD_tensor
-
 
 def WedgeProduct(left,right,debug=False):
     ret = None
