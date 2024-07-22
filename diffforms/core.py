@@ -360,6 +360,13 @@ class Tensor():
         ret.collect_comps()
         return ret
 
+    def factor(self):
+        ret = Tensor(self.manifold)
+        ret.factors = [f.factor() for f in self.factors]
+        ret.comps_list = self.comps_list
+        ret.collect_comps()
+        return ret
+
     def conjugate(self):
         ret = Tensor(self.manifold)
         ret.factors = [f.conjugate() for f in self.factors]
@@ -732,9 +739,7 @@ class DifferentialFormMul():
     def _eval_simplify(self, **kwargs):
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = self.forms_list.copy()
-        ret.factors = []
-        for i in range(len(self.factors)):
-            ret.factors.append(simplify(self.factors[i]))
+        ret.factors = [simplify(f) for f in self.factors]
         
         ret.remove_squares()
         ret.remove_above_top()
@@ -849,7 +854,19 @@ class DifferentialFormMul():
 
     def simplify(self): 
         return self._eval_simplify()
-    
+
+    def factor(self):
+        ret = DifferentialFormMul(self.manifold)
+        ret.forms_list = self.forms_list.copy()
+        ret.factors = [simplify(f) for f in self.factors]
+        
+        ret.remove_squares()
+        ret.remove_above_top()
+        ret.sort_form_sums()
+        ret.collect_forms()
+
+        return ret    
+
     def expand(self):
         ret = DifferentialFormMul(self.manifold)
         ret.factors = [f.expand() for f in self.factors]
