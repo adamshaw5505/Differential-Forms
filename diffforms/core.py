@@ -1,4 +1,4 @@
-from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita, solve, Matrix, variations, factorial
+from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita, solve, Matrix, variations, factorial, Matrix
 from sympy.physics.units.quantities import Quantity
 from IPython.display import Math
 from sympy.combinatorics import Permutation
@@ -109,6 +109,14 @@ class Manifold():
         volS = (S1*S1+S2*S2+S3*S3).get_factor(0)/sigma
         W = Matrix([[(f*s).get_factor(0)/(2*volS) for s in twoforms] for f in curvatures])
         return W
+
+    def get_metric_determinant(self):
+        assert(len(self.tetrads)==4)
+        vs = self.get_vectors()
+        g_metric = Matrix([[Contract(self.metric*u*v,(0,2),(1,3)) for v in vs] for u in vs])
+        return g_metric.det()
+        
+            
 
 class VectorField():
     def __init__(self,manifold:Manifold,symbol):
@@ -1229,6 +1237,19 @@ def FormsListInBasisMatrix(formslist:dict, basis=None) -> Matrix:
 
     return return_matrix
     
+def SO3TwoFormProduct(Si,Bi,g_UU):
+    S1_DD,S2_DD,S3_DD = [2*s.to_tensor() for s in Si]
+    B1_DD,B2_DD,B3_DD = [2*b.to_tensor() for b in Bi]
+    S1_DU,S2_DU,S3_DU = [Contract(s_DD*g_UU,(1,2)) for s_DD in [S1_DD,S2_DD,S3_DD]]
+    R1_DD = Contract(S2_DU*B3_DD - S3_DU*B2_DD,(1,2))
+    R2_DD = Contract(S3_DU*B1_DD - S1_DU*B3_DD,(1,2))
+    R3_DD = Contract(S1_DU*B2_DD - S2_DU*B1_DD,(1,2))
+
+    R1 = R1_DD.to_differentialform()/Number(2)
+    R2 = R2_DD.to_differentialform()/Number(2)
+    R3 = R3_DD.to_differentialform()/Number(2)
+    return [R1,R2,R3]
+
 def Hodge(form):
     basis = form.manifold.basis
     dim = form.manifold.dimension
