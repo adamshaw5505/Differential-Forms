@@ -138,17 +138,20 @@ class VectorField():
     
     def __add__(self,other):
         ret = Tensor(self.manifold)
+        ret.comps_list = [[self]]
+        ret.factors = [1]
         if isinstance(self,(int,float,AtomicExpr,Expr)):
-            ret.comps_list = [[self],[1]]
-            ret.factors = [1,1]
+            if other != 0:
+                ret.comps_list.append([1])
+                ret.factors.append(other)
         elif isinstance(other,(VectorField,DifferentialForm)):
-            ret.comps_list = [[self],[other]]
-            ret.factors = [1,1]
+            ret.comps_list.append([other])
+            ret.factors(1)
         elif isinstance(other,DifferentialFormMul):
             return self + other.to_tensor()
         elif isinstance(other,Tensor):
-            ret.comps_list = [[self]] + other.comps_list
-            ret.factors = [1] + other.factors
+            ret.comps_list += other.comps_list
+            ret.factors += other.factors
         else:
             raise NotImplementedError
         
@@ -173,8 +176,8 @@ class Tensor():
     
     def __add__(self,other):
         ret = Tensor(self.manifold)
-        ret.comps_list += self.comps_list
-        ret.factors += self.factors
+        ret.comps_list += self.comps_list.copy()
+        ret.factors += self.factors.copy()
         if isinstance(other,Tensor):
             ret.comps_list +=  (other.comps_list)
             ret.factors += other.factors
@@ -187,7 +190,7 @@ class Tensor():
         elif isinstance(other,DifferentialFormMul):
             return self + other.to_tensor()
         elif isinstance(other,float) or isinstance(other,int):
-            ret = self + DifferentialForm(self.manifold,Rational(other),0)
+            if other != 0: ret = self + DifferentialForm(self.manifold,Rational(other),0)
         elif isinstance(other,AtomicExpr):
             ret = self + DifferentialForm(self.manifold,other,0)
         else:
@@ -377,8 +380,8 @@ class Tensor():
     def to_differentialform(self):
         if set(self.get_weight()) != set([-1]): raise TypeError("Tensor cannot be projected to a differential form")
         ret = DifferentialFormMul(self.manifold)
-        ret.factors = self.factors
-        ret.forms_list = self.comps_list
+        ret.factors = [f/Number(factorial(len(self.factors))) for f in self.factors]
+        ret.forms_list = self.comps_list.copy()
 
         ret.remove_squares()
         ret.remove_above_top()
@@ -386,12 +389,9 @@ class Tensor():
         ret.collect_forms()
 
         if ret.factors == [] and ret.forms_list == []: 
-            ret.factors = [Number(0)]
-            ret.forms_list = [[]]
-        
-        return ret
+            return Number(0)
 
-        
+        return ret
 
     _sympystr = _repr_latex_
     __repr__  = _repr_latex_
@@ -420,6 +420,7 @@ class DifferentialForm():
         if isinstance(other,(Tensor,VectorField)):
             return TensorProduct(self,other)
         return WedgeProduct(self,other)
+
     def __rmul__(self,other): 
         if isinstance(other,(Tensor,VectorField)):
             return TensorProduct(other,self)
@@ -429,15 +430,18 @@ class DifferentialForm():
 
     def __add__(self,other):
         ret = DifferentialFormMul(self.manifold)
+        ret.forms_list = [[self]]
+        ret.factors = [[1]]
         if isinstance(other,(AtomicExpr,float,int,Number)):
-            ret.forms_list = [[self],[]]
-            ret.factors = [1,other]
+            if other != 0:
+                ret.forms_list.append([])
+                ret.factors.append(other)
         elif isinstance(other,DifferentialForm):
-            ret.forms_list = [[self],[other]]
-            ret.factors = [1,1]
+            ret.forms_list.append([other])
+            ret.factors.append(1)
         elif isinstance(other,DifferentialFormMul):
-            ret.forms_list = [[self]]+other.forms_list
-            ret.factors = [1]+other.factors
+            ret.forms_list += other.forms_list
+            ret.factors += other.factors
         else:
             raise NotImplementedError
         ret.collect_forms()
@@ -528,19 +532,20 @@ class DifferentialFormMul():
  
     def __add__(self,other):
         ret = DifferentialFormMul(self.manifold)
+        ret.forms_list = self.forms_list
+        ret.factors = self.factors
         if isinstance(other,DifferentialFormMul):
             assert(self.manifold == other.manifold)
-            ret.forms_list += (self.forms_list) + (other.forms_list)
-            ret.factors += self.factors + other.factors
+            ret.forms_list += other.forms_list
+            ret.factors += other.factors
         elif isinstance(other,DifferentialForm):
             assert(self.manifold == other.manifold)
-            ret.forms_list += self.forms_list + [[other]]
-            ret.factors += self.factors + [1]
+            ret.forms_list.append([other])
+            ret.factors.append(1)
         elif isinstance(other,(float,int,AtomicExpr,Number)):
-            ret.forms_list  = self.forms_list
-            ret.factors = self.factors
-            ret.forms_list += [[]]
-            ret.factors += [other]
+            if other != 0:
+                ret.forms_list.append([])
+                ret.factors.append(other)
         else:
             raise NotImplementedError
         ret.remove_squares()
@@ -827,7 +832,7 @@ class DifferentialFormMul():
             for perm in permutations(list(range(L)),L):
                 parity = (len(Permutation(perm).full_cyclic_form)-1)%2
                 ret.comps_list += [[self.forms_list[i][p] for p in perm]]
-                ret.factors += [(-1)**parity*self.factors[i]/factorial(L)]
+                ret.factors += [(-1)**(parity+1)*self.factors[i]/factorial(L)]
         return ret
 
     def get_degree(self):
@@ -950,6 +955,8 @@ def d(form,manifold=None):
 def PartialDerivative(tensor,manifold=None):
     if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
         return PartialDerivative((1*tensor).to_tensor(),manifold)
+    elif isinstance(tensor,(VectorField)):
+        return 0
     elif isinstance(tensor,(AtomicExpr,Expr,Function)):
         if manifold == None: raise NotImplementedError("Manifold cannot be None for Scalar input")
         ret = Tensor(manifold)
@@ -1129,6 +1136,7 @@ def TensorProduct(left,right):
 
 def Contract(tensor,*positions):
     if not isinstance(tensor,Tensor): raise TypeError("First argument must be a Tensor.")
+    elif isinstance(tensor,(int,float,Number)): return tensor
     tensor_weight = tensor.get_weight()
     if tensor_weight == (None): raise TypeError("Tensors must be of consistent types")
     p1_list = []
@@ -1169,6 +1177,7 @@ def Contract(tensor,*positions):
     return ret
 
 def PermuteIndices(tensor,new_order):
+    if isinstance(tensor,(int,float,Number)): return tensor
     t_weight = tensor.get_weight()
     if (len(new_order)!=len(t_weight)): raise NotImplementedError("New index order must contain every index")
     if set(new_order) != set(range(len(t_weight))): raise TypeError("New index order does not contain every index once and only once")
@@ -1179,6 +1188,24 @@ def PermuteIndices(tensor,new_order):
     
     ret.collect_comps()
     return ret
+
+def LieDerivative(vector,tensor):
+    if not isinstance(vector,(Tensor,VectorField)): raise TypeError("First argument for the Lie derivative must be a vector")
+    if isinstance(vector,Tensor) and vector.get_weight() != (1,): return TypeError("First argument for the Lie derivative must be a vector")
+    if isinstance(tensor,(DifferentialFormMul,DifferentialForm)):
+        return d(tensor.insert(vector),tensor.manifold) + d(tensor).insert(vector)
+    elif isinstance(tensor,VectorField):
+        return 0
+    elif isinstance(tensor,Tensor):
+        LieD_tensor = Contract(vector*PartialDerivative(tensor),(0,1))
+        PDvector = PartialDerivative(vector)
+        if PDvector == 0: return LieD_tensor
+        for I in range(len(tensor.factors)):
+            for i in range(len(tensor.comps_list[I])):
+                sign = 1 if isinstance(tensor.comps_list[I][i],DifferentialForm) else -1
+                LieD_tensor += sign*Contract(tensor*PDvector,(i,0 if sign == 1 else 1))
+        return LieD_tensor
+    raise NotImplementedError("Only the Tensor class and the Differential form class can be acted on by the LieDerivative")
 
 def FormsListInBasisMatrix(formslist:dict, basis=None) -> Matrix:
     if basis == None:
