@@ -1,4 +1,4 @@
-from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita, solve, Matrix, variations, factorial, Matrix
+from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita, solve, Matrix, variations, factorial, Matrix, conjugate, Symbol
 from sympy.physics.units.quantities import Quantity
 from IPython.display import Math
 from sympy.combinatorics import Permutation
@@ -38,7 +38,7 @@ class Manifold():
     def set_tetrads(self,tetrads):
         self.tetrads = tetrads
         tetrads_D = [e.to_tensor() for e in tetrads]
-        self.metric = tetrads_D[0]*tetrads_D[0]
+        self.metric = self.signature*tetrads_D[0]*tetrads_D[0]
         for i in range(1,len(tetrads)):
             self.metric += tetrads_D[i]*tetrads_D[i]
         tetrad_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in tetrads])
@@ -50,13 +50,17 @@ class Manifold():
             self.metric_inv += self.tetrads_inv[i]*self.tetrads_inv[i]
         
         T_DDD = PartialDerivative(self.metric)
+        # if T_DDD == 0 or T_DDD.get_factors(0) == 0:
+        #     self.christoffel_symbols = 0
+        #     return
         g_UU_T_DDD = (self.metric_inv*T_DDD)
 
         Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
-        Gamma_UDD_2 = Gamma_UDD_1[0,2,1]
+        Gamma_UDD_2 = PermuteIndices(Gamma_UDD_1,(0,2,1))
+        # Gamma_UDD_2 = Gamma_UDD_1[0,2,1]
         Gamma_UDD_3 = Contract(g_UU_T_DDD,(1,2))
 
-        self.christoffel_symbols = ((Gamma_UDD_1 + Gamma_UDD_2 - Gamma_UDD_3)/2).simplify()
+        self.christoffel_symbols = simplify((Gamma_UDD_1 + Gamma_UDD_2 - Gamma_UDD_3)/2)
 
     def get_basis(self): return self.basis
     def get_vectors(self): return self.vectors
@@ -116,8 +120,6 @@ class Manifold():
         g_metric = Matrix([[Contract(self.metric*u*v,(0,2),(1,3)) for v in vs] for u in vs])
         return g_metric.det()
         
-            
-
 class VectorField():
     def __init__(self,manifold:Manifold,symbol):
         """
@@ -167,9 +169,12 @@ class VectorField():
     def __radd__(self,other): return self+other
         
     def _repr_latex_(self):
-        return "$\\partial_{"+str(self.symbol)+"}$"
+        return "$\\partial_{"+latex(self.symbol)+"}$"
 
-    def __str__(self): return "\\partial_{"+str(self.symbol)+"}"
+    def __str__(self): return "\\partial_{"+latex(self.symbol)+"}"
+
+    def conjugate(self):
+        return VectorField(self.manifold,conjugate(self.symbol))
 
     __repr__ = _repr_latex_
     _latex   = _repr_latex_
@@ -214,7 +219,7 @@ class Tensor():
 
     def __neg__(self):
         ret = Tensor(self.manifold)
-        ret.comps_list = self.comps_list
+        ret.comps_list = self.comps_list.copy()
         ret.factors = [-f for f in self.factors]
         return ret
 
@@ -253,7 +258,13 @@ class Tensor():
             current_weight = tuple(map(lambda x: int(isinstance(x,VectorField))-int(isinstance(x,DifferentialForm)),self.comps_list[i]))
             if current_weight != first_weight: return (None)
         return first_weight
-    
+
+    def get_component(self,i):
+        ret = Tensor(self.manifold)
+        ret.comps_list = [self.comps_list[i].copy()]
+        ret.factors = [self.factors[i]]
+        return ret
+
     def collect_comps(self):
         new_comps_list = []
         new_factors = []
@@ -289,15 +300,15 @@ class Tensor():
 
     def _eval_simplify(self, **kwargs):
         ret = Tensor(self.manifold)
-        ret.comps_list = self.comps_list
+        ret.comps_list = self.comps_list.copy()
         ret.factors = [simplify(f) for f in self.factors]
         ret.collect_comps()
         return ret
 
     def subs(self,target,sub=None,simp=True):
         ret = Tensor(self.manifold)
-        ret.factors = self.factors
-        ret.comps_list = self.comps_list
+        ret.factors = self.factors.copy()
+        ret.comps_list = self.comps_list.copy()
 
         if isinstance(target,(DifferentialForm,VectorField)):
             new_comps_list = []
@@ -367,28 +378,28 @@ class Tensor():
     def simplify(self):
         ret = Tensor(self.manifold)
         ret.factors = [f.simplify() for f in self.factors]
-        ret.comps_list = self.comps_list
+        ret.comps_list = self.comps_list.copy()
         ret.collect_comps()
         return ret
 
     def factor(self):
         ret = Tensor(self.manifold)
         ret.factors = [f.factor() for f in self.factors]
-        ret.comps_list = self.comps_list
+        ret.comps_list = self.comps_list.copy()
         ret.collect_comps()
         return ret
 
     def conjugate(self):
         ret = Tensor(self.manifold)
         ret.factors = [f.conjugate() for f in self.factors]
-        ret.comps_list = self.comps_list
+        ret.comps_list = self.comps_list.copy()
         ret.collect_comps()
         return ret
 
     def to_differentialform(self):
         if set(self.get_weight()) != set([-1]): raise TypeError("Tensor cannot be projected to a differential form")
         ret = DifferentialFormMul(self.manifold)
-        ret.factors = [f/Number(factorial(len(self.factors))) for f in self.factors]
+        ret.factors = self.factors.copy()
         ret.forms_list = self.comps_list.copy()
 
         ret.remove_squares()
@@ -405,6 +416,12 @@ class Tensor():
     __repr__  = _repr_latex_
     _latex    = _repr_latex_
     _print    = _repr_latex_
+
+    def conjugate(self):
+        ret = Tensor(self.manifold)
+        ret.comps_list = [[f.conjugate() for  f in f_list] for f_list in self.comps_list]
+        ret.factors = [conjugate(f) for f in self.factors]
+        return ret
 
 class DifferentialForm():
     def __init__(self,manifold,symbol,degree=0, exact=False):
@@ -439,7 +456,7 @@ class DifferentialForm():
     def __add__(self,other):
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = [[self]]
-        ret.factors = [[1]]
+        ret.factors = [1]
         if isinstance(other,(AtomicExpr,float,int,Number)):
             if other != 0:
                 ret.forms_list.append([])
@@ -527,6 +544,9 @@ class DifferentialForm():
             ret.exact = self.exact
             return ret
 
+    def conjugate(self):
+        return DifferentialForm(self.manifold,conjugate(self.symbol),self.degree,self.exact)
+
 class DifferentialFormMul():
     def __init__(self,manifold:Manifold,form:DifferentialForm=None,factor:AtomicExpr=None):
         self.__sympy__ = True
@@ -540,8 +560,8 @@ class DifferentialFormMul():
  
     def __add__(self,other):
         ret = DifferentialFormMul(self.manifold)
-        ret.forms_list = self.forms_list
-        ret.factors = self.factors
+        ret.forms_list = self.forms_list.copy()
+        ret.factors = self.factors.copy()
         if isinstance(other,DifferentialFormMul):
             assert(self.manifold == other.manifold)
             ret.forms_list += other.forms_list
@@ -581,7 +601,7 @@ class DifferentialFormMul():
     def __radd__(self,other): return self + other
     def __neg__(self):
         ret = DifferentialFormMul(self.manifold)
-        ret.forms_list = self.forms_list
+        ret.forms_list = self.forms_list.copy()
         ret.factors = [-f for f in self.factors]
         return ret
     
@@ -614,7 +634,7 @@ class DifferentialFormMul():
                     sign *= (-1)**self.forms_list[i][j].degree 
         elif isinstance(other,Tensor) and other.is_vectorfield():
             ret = sum([other.factors[i]*self.insert(other.comps_list[i][0]) for i in range(len(other.factors))])
-            return 
+            return ret
         else:
             raise NotImplementedError("Tensor inserted must be a vector field")
 
@@ -752,7 +772,7 @@ class DifferentialFormMul():
     def _eval_simplify(self, **kwargs):
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = self.forms_list.copy()
-        ret.factors = [simplify(f) for f in self.factors]
+        ret.factors = [simplify(f,kwargs=kwargs) for f in self.factors]
         
         ret.remove_squares()
         ret.remove_above_top()
@@ -840,7 +860,7 @@ class DifferentialFormMul():
             for perm in permutations(list(range(L)),L):
                 parity = (len(Permutation(perm).full_cyclic_form)-1)%2
                 ret.comps_list += [[self.forms_list[i][p] for p in perm]]
-                ret.factors += [(-1)**(parity+1)*self.factors[i]/factorial(L)]
+                ret.factors += [(-1)**(parity)*self.factors[i]/factorial(L)]
         return ret
 
     def get_degree(self):
@@ -868,6 +888,15 @@ class DifferentialFormMul():
     def simplify(self): 
         return self._eval_simplify()
 
+    def eval_sympy_func(self,func, **kwargs):
+        ret = DifferentialFormMul(self.manifold)
+        ret.forms_list = self.forms_list.copy()
+        ret.factors = [func(f,kwargs) for f in self.factors]
+        
+        ret.collect_forms()
+
+        return ret
+
     def factor(self):
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = self.forms_list.copy()
@@ -884,6 +913,12 @@ class DifferentialFormMul():
         ret = DifferentialFormMul(self.manifold)
         ret.factors = [f.expand() for f in self.factors]
         ret.forms_list = self.forms_list
+        return ret
+
+    def conjugate(self):
+        ret = DifferentialFormMul(self.manifold)
+        ret.forms_list = [[f.conjugate() for f in f_list] for f_list in self.forms_list]
+        ret.factors = [conjugate(f) for f in self.factors]
         return ret
 
 def remove_latex_arguments(object):
@@ -914,9 +949,14 @@ def DefDifferentialForms(manifold:Manifold,symbs:list,degrees:list):
             ret = [DifferentialForm(manifold,symbs[i],degrees[i]) for i in range(len(degrees))]
         elif isinstance(degrees,int):
             ret = [DifferentialForm(manifold,s,degrees) for s in symbs]
+    elif isinstance(symbs,Symbol):
+        if isinstance(degrees,list):
+            ret = [DifferentialForm(manifold,symbs,d) for d in degrees]
+        else:
+            ret = DifferentialForm(manifold,symbs,degrees)
     else:
         raise NotImplementedError
-    if isinstance(len,list) and len(ret) == 1:
+    if isinstance(ret,list) and len(ret) == 1:
         return ret[0]
     return ret
 
@@ -926,6 +966,8 @@ def DefVectorFields(manifold:Manifold,symbs:list):
         ret = DefVectorFields(manifold,list(symbols(symbs)))
     elif isinstance(symbs,(list,tuple)):
         ret = [VectorField(manifold,s) for s in symbs]
+    elif isinstance(symbs,Symbol):
+        ret = [VectorField(manifold,symbs)]
     else:
         raise NotImplementedError
     if len(ret) == 1:
@@ -969,7 +1011,7 @@ def PartialDerivative(tensor,manifold=None):
         if manifold == None: raise NotImplementedError("Manifold cannot be None for Scalar input")
         ret = Tensor(manifold)
         for i in range(manifold.dimension):
-            ret.comps_list += [[manfiold.basis[i]]]
+            ret.comps_list += [[manifold.basis[i]]]
             ret.factors += [tensor.diff(manifold.coords[i])]
         ret.collect_comps()
         return ret
@@ -982,6 +1024,7 @@ def PartialDerivative(tensor,manifold=None):
                 ret.factors += [tensor.factors[j].diff(man.coords[i])]
         ret.collect_comps()
         return ret
+    return 0
 
 def CovariantDerivative(tensor,manifold=None):
     if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
@@ -1003,20 +1046,21 @@ def CovariantDerivative(tensor,manifold=None):
         CD_tensor = PartialDerivative(tensor)
         for i in range(len(t_weight)):
             if t_weight[i] == -1:
-                # print([0,i+1]+[j for j in  list(range(1,len(t_weight)+1)) if j != i+1])
                 index_list = [0] + list(range(2,len(t_weight)+1))
                 index_list.insert(i+1,1)
-                CD_tensor += -Contract(Gamma_tensor,(0,3+i))[*index_list]
+                CD_tensor += -PermuteIndices(Contract(Gamma_tensor,(0,3+i)),index_list)
             elif t_weight[i] == 1:
                 index_list = list(range(1,len(t_weight)+1))
                 index_list.insert(i+1,0)
-                CD_tensor += Contract(Gamma_tensor,(2,3+i))[index_list]
+                CD_tensor += PermuteIndices(Contract(Gamma_tensor,(2,3+i)),index_list)
         return CD_tensor
 
 def WedgeProduct(left,right,debug=False):
     ret = None
     if isinstance(left,(int,float,Number,AtomicExpr,Expr)):
+        left = left if not isinstance(left,(int,float)) else Number(left)
         if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
+            right = right if not isinstance(right,(int,float)) else Number(right)
             return left*right
         elif isinstance(right,DifferentialForm):
             ret = DifferentialFormMul(right.manifold)
@@ -1032,7 +1076,7 @@ def WedgeProduct(left,right,debug=False):
         ret = DifferentialFormMul(left.manifold)
         if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
             ret.forms_list = [[left]]
-            ret.factors = [right]
+            ret.factors = [right if not isinstance(right,(int,float)) else Number(right)]
         elif isinstance(right,DifferentialForm):
             assert(right.manifold == left.manifold)
             ret.forms_list = [[left,right]]
@@ -1047,6 +1091,7 @@ def WedgeProduct(left,right,debug=False):
         ret = DifferentialFormMul(left.manifold)
         if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
             ret.forms_list = left.forms_list
+            right = right if not isinstance(right,(int,float)) else Number(right)
             ret.factors = [right*f for f in left.factors]
         elif isinstance(right,DifferentialForm):
             assert(left.manifold == right.manifold)
@@ -1077,7 +1122,9 @@ def TensorProduct(left,right):
     if isinstance(left,DifferentialFormMul) or isinstance(right,DifferentialFormMul): raise NotImplementedError("Must convert DifferentialFormMul into Tensor before using with TensorProduct")
     ret = None
     if isinstance(left,(int,float,AtomicExpr,Expr)):
+        left = left if not isinstance(left,(int,float)) else Number(left)
         if isinstance(right,(int,float,AtomicExpr,Expr)):
+            right = right if not isinstance(right,(int,float)) else Number(right)
             return left*right
         elif isinstance(right,(DifferentialForm,VectorField)):
             ret = Tensor(right.manifold)
@@ -1085,7 +1132,7 @@ def TensorProduct(left,right):
             ret.factors = [left]
         elif isinstance(right,Tensor):
             ret = Tensor(right.manifold)
-            ret.comps_list = right.comps_list
+            ret.comps_list = right.comps_list.copy()
             ret.factors = [left*f for f in right.factors]
         else:
             raise NotImplementedError
@@ -1093,7 +1140,7 @@ def TensorProduct(left,right):
         ret = Tensor(left.manifold)
         if isinstance(right,(int,float,AtomicExpr,Expr)):
             ret.comps_list = [[left]]
-            ret.factors = [right]
+            ret.factors = [right if not isinstance(right,(int,float)) else Number(right)]
         elif isinstance(right,(DifferentialForm,VectorField)):
             assert(left.manifold == right.manifold)
             ret.comps_list = [[left,right]]
@@ -1108,7 +1155,7 @@ def TensorProduct(left,right):
         ret = Tensor(left.manifold)
         if isinstance(right,(int,float,AtomicExpr,Expr)):
             ret.comps_list = [[left]]
-            ret.factors = [right]
+            ret.factors = [right if not isinstance(right,(int,float)) else Number(right)]
         elif isinstance(right,(DifferentialForm,VectorField)):
             assert(left.manifold == right.manifold)
             ret.comps_list = [[left,right]]
@@ -1122,7 +1169,8 @@ def TensorProduct(left,right):
     elif isinstance(left,Tensor):
         ret = Tensor(left.manifold)
         if isinstance(right,(int,float,AtomicExpr,Expr)):
-            ret.comps_list = left.comps_list
+            ret.comps_list = left.comps_list.copy()
+            right = Number(right) if isinstance(right,(int,float)) else right
             ret.factors = [right*f for f in left.factors]
         elif isinstance(right,(DifferentialForm,VectorField)):
             assert(left.manifold == right.manifold)
@@ -1140,11 +1188,16 @@ def TensorProduct(left,right):
     else:
         raise NotImplementedError
     ret.collect_comps()
+
+    if ret.comps_list == [[]] or ret.comps_list == []:
+        return 0 if ret.factors == [] else ret.factors[0]
     return ret
 
 def Contract(tensor,*positions):
-    if not isinstance(tensor,Tensor): raise TypeError("First argument must be a Tensor.")
-    elif isinstance(tensor,(int,float,Number)): return tensor
+    if isinstance(tensor,(int,float,Number)): return tensor
+    elif not isinstance(tensor,Tensor): raise TypeError("First argument must be a Tensor.")
+    if tensor.comps_list == [[]] or tensor.comps_list == []:
+        return 0 if tensor.factors == [] else  tensor.factors[0]
     tensor_weight = tensor.get_weight()
     if tensor_weight == (None): raise TypeError("Tensors must be of consistent types")
     p1_list = []
@@ -1173,9 +1226,6 @@ def Contract(tensor,*positions):
                 sign *= left_popped[k].insert(right_popped[k])
             else:
                 sign *= right_popped[k].insert(left_popped[k])
-        if isinstance(sign,DifferentialFormMul):
-            display(sign.forms_list)
-            display(sign.factors)
         if sign != 0:
             ret.comps_list += [total_without]
             ret.factors += [tensor.factors[i]*sign]
@@ -1211,7 +1261,11 @@ def LieDerivative(vector,tensor):
         for I in range(len(tensor.factors)):
             for i in range(len(tensor.comps_list[I])):
                 sign = 1 if isinstance(tensor.comps_list[I][i],DifferentialForm) else -1
-                LieD_tensor += sign*Contract(tensor*PDvector,(i,0 if sign == 1 else 1))
+                new_indices = list(range(len(tensor.comps_list[I])))
+                j = len(tensor.comps_list[I]) + (1 if sign == 1 else 2)
+                new_indices[i] = j-2
+                new_indices[j-2] = i
+                LieD_tensor += sign*PermuteIndices(Contract(tensor.get_component(I)*PDvector,(i,j)),new_indices)
         return LieD_tensor
     raise NotImplementedError("Only the Tensor class and the Differential form class can be acted on by the LieDerivative")
 
@@ -1237,7 +1291,8 @@ def FormsListInBasisMatrix(formslist:dict, basis=None) -> Matrix:
 
     return return_matrix
     
-def SO3TwoFormProduct(Si,Bi,g_UU):
+def SO3TwoFormProduct(Si,Bi):
+    g_UU = Si[0].manifold.get_inverse_metric()
     S1_DD,S2_DD,S3_DD = [2*s.to_tensor() for s in Si]
     B1_DD,B2_DD,B3_DD = [2*b.to_tensor() for b in Bi]
     S1_DU,S2_DU,S3_DU = [Contract(s_DD*g_UU,(1,2)) for s_DD in [S1_DD,S2_DD,S3_DD]]
@@ -1292,14 +1347,3 @@ def Hodge(form):
     # else:
     #     raise NotImplementedError
     # return ret
-
-    if weyl == None:
-        weyl = SelfDualWeylMatrix(curvatures, twoforms)
-    F1,F2,F3 = curvatures
-    S1,S2,S3 = twoforms
-
-    R1 = F1 - weyl[0,0]*S1 - weyl[0,1]*S2 - weyl[0,2]*S3
-    R2 = F2 - weyl[1,0]*S1 - weyl[1,1]*S2 - weyl[1,2]*S3
-    R3 = F3 - weyl[2,0]*S1 - weyl[2,1]*S2 - weyl[2,2]*S3
-
-    return [R1,R2,R3]
