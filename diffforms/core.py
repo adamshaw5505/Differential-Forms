@@ -7,6 +7,11 @@ import re
 import numbers
 from math import factorial, prod
 
+""" Global Settings:
+        _PRINT_ARGUMENTS : Boolean - True if arguments are displayed in functions when printing, False otherwise. Default: False (my personal preference)
+     """
+_PRINT_ARGUMENTS = False
+
 class Manifold():
     def __init__(self,label,dimension,signature=1):
         self.label = label
@@ -48,25 +53,20 @@ class Manifold():
         self.metric_inv = self.tetrads_inv[0]*self.tetrads_inv[0]
         for i in range(1,self.dimension):
             self.metric_inv += self.tetrads_inv[i]*self.tetrads_inv[i]
-        
-        T_DDD = PartialDerivative(self.metric)
-        # if T_DDD == 0 or T_DDD.get_factors(0) == 0:
-        #     self.christoffel_symbols = 0
-        #     return
-        g_UU_T_DDD = (self.metric_inv*T_DDD)
-
-        Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
-        Gamma_UDD_2 = PermuteIndices(Gamma_UDD_1,(0,2,1))
-        # Gamma_UDD_2 = Gamma_UDD_1[0,2,1]
-        Gamma_UDD_3 = Contract(g_UU_T_DDD,(1,2))
-
-        self.christoffel_symbols = simplify((Gamma_UDD_1 + Gamma_UDD_2 - Gamma_UDD_3)/2)
 
     def get_basis(self): return self.basis
     def get_vectors(self): return self.vectors
     def get_metric(self): return self.metric
     def get_inverse_metric(self): return self.metric_inv
-    def get_christoffel_symbols(self): return self.christoffel_symbols
+    def get_christoffel_symbols(self): 
+        if self.christoffel_symbols == None:
+            T_DDD = PartialDerivative(self.metric)
+            g_UU_T_DDD = (self.metric_inv*T_DDD)
+            Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
+            Gamma_UDD_2 = PermuteIndices(Gamma_UDD_1,(0,2,1))
+            Gamma_UDD_3 = Contract(g_UU_T_DDD,(1,2))
+            self.christoffel_symbols = simplify((Gamma_UDD_1 + Gamma_UDD_2 - Gamma_UDD_3)/2)
+        return self.christoffel_symbols
 
     def get_selfdual_twoforms(self,orientation=1):
         assert(len(self.tetrads)==4)
@@ -216,6 +216,9 @@ class Tensor():
 
     def __sub__(self,other):
         return self + (-other)
+    
+    def __rsub__(self,other):
+        return other + (-self)
 
     def __neg__(self):
         ret = Tensor(self.manifold)
@@ -240,7 +243,10 @@ class Tensor():
         return PermuteIndices(self,list(indices))
 
     def _repr_latex_(self):
-        latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
+        if not _PRINT_ARGUMENTS:
+            latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
+        else: 
+            latex_str = "$" + "+".join([ "(" + latex(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
         if latex_str == "$$":
             return "$0$"
         return latex_str
@@ -715,7 +721,10 @@ class DifferentialFormMul():
         self.factors = new_factors
             
     def _repr_latex_(self):
-        latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))]) + "$"
+        if not _PRINT_ARGUMENTS:
+            latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))]) + "$"
+        else:
+            latex_str = "$" + "+".join([ "(" + latex(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))]) + "$"
         if latex_str == "$$":
             return "$0$"
         return latex_str
@@ -723,23 +732,13 @@ class DifferentialFormMul():
     def get_factor(self,index):
         if len(self.factors) == 0: return 0
         return self.factors[index]
-        
-    def conjugate(self):
-        ret = DifferentialFormMul(self.manifold)
-        ret.factors = [f.conjugate() for f in self.factors]
-        ret.forms_list = self.forms_list
-        return ret
-
-    def __str__(self):
-        str_str = "+".join([ "(" + str(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))])
-        if str_str == "":
-            return "0"
-        return str_str
 
     def __getitem__(self,index):
         #TODO: Make this permute the differential forms not index the components
         pass
+    
     _sympystr = _repr_latex_
+    __str__ = _repr_latex_
 
     @property
     def d(self):
@@ -858,7 +857,7 @@ class DifferentialFormMul():
         for i in range(len(self.factors)):
             L = len(self.forms_list[i])
             for perm in permutations(list(range(L)),L):
-                parity = (len(Permutation(perm).full_cyclic_form)-1)%2
+                parity = int(Permutation(perm).is_odd)
                 ret.comps_list += [[self.forms_list[i][p] for p in perm]]
                 ret.factors += [(-1)**(parity)*self.factors[i]/factorial(L)]
         return ret
