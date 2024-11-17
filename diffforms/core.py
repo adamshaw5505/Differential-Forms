@@ -8,12 +8,42 @@ import numbers
 from math import factorial, prod
 
 """ Global Settings:
-        _PRINT_ARGUMENTS : Boolean - True if arguments are displayed in functions when printing, False otherwise. Default: False (my personal preference)
+        _PRINT_ARGUMENTS : Boolean - True if arguments are displayed in functions when printing, False otherwise. Default: False
      """
 _PRINT_ARGUMENTS = False
 
+# TODO:
+#   Generalise manifold to any signature dimension
+#   Find a better way to describe the VectorField class
+
+def drange(n,d): return variations(range(n),d)
+
 class Manifold():
-    def __init__(self,label,dimension,signature=1):
+    """Class: Manifold
+    
+    Keeps track of the data for a given manifold.
+    
+    Attributes:
+        - label(String):                                           Arbitrary name for the manifold, too keep track if there are two similar manifold.
+        - dimension(Integer):                                      A whole number, the dimension.
+        - signature(Integer):                                      +1 or -1 depending if the there is 0 or 1 minus in the singaure repsetively.
+        - coords(List[Symbols]):                                   List of symbols being the coordinates.
+        - basis(List[DifferentialForm/DifferentialFormMul]):       List of basis 1-forms that make a basis of the cotangent space.
+        - tetrads(List[DifferentialForm/DifferentialFormMul]):     List of tetrad 1-forms for the metric and frame.
+        - tetrads_inv(List[DifferentialForm/DifferentialFormMul]): Inverse tetrads as a list of VectorFields.
+        - metric(Tensor):                                          The metric on the manifold
+        - metric_inv(Tensor):                                      Inverse of the metric
+        - vectors(List[Tensor,VectorField]):                       List of Vectors/VectorFields that form a basis of the tangent space.
+        - christoffel_symbols(Tensor):                             Christoffel symbols for the metric, def "get_christoffel_symbols" defines this.
+    """
+    def __init__(self,label:str,dimension:int,signature:int=1):
+        """Initialise the Manifold
+        
+        Arguments:
+            - label(String):      Arbitrary name for the manifold.
+            - dimension(Integer): The dimension.
+            - signature(Integer): Signature of the manifold.
+        """
         self.label = label
         assert(dimension > 0)
         self.dimension = dimension
@@ -21,132 +51,201 @@ class Manifold():
         self.coords = None
         self.basis = None
         self.tetrads = None
+        self.tetrads_inv = None
         self.metric = None
         self.metric_inv = None
         self.vectors = None
         self.christoffel_symbols = None
     
     def __eq__(self,other):
+        """Equates Manifolds by their label, dimension and signature."""
         if isinstance(other,Manifold):
-            return (self.label == other.label) and (self.dimension == other.dimension)
+            return (self.label == other.label) and (self.dimension == other.dimension) and (self.signature == other.signature)
         return False
     
-    def __len__(self): return self.dimension
+    def __len__(self):
+        """Returns the dimension of the Manifold."""
+        return self.dimension
 
-    def set_coordinates(self,coordinates,signature=1):
+    def set_coordinates(self,coordinates:list) -> None:
+        """Give coordinates to the Manifold.
+
+        Also defines basis and vectors as d(c) and d/d(c).
+        
+        Arguments:
+            - coordinates(List[Symbols]): List of symbols
+        """
         assert(len(coordinates) == self.dimension)
         self.coords = coordinates
         self.basis = [DifferentialForm(self,c,0).d for c in coordinates]
-        self.signature = signature
         self.vectors = DefVectorFields(self,coordinates)
     
-    def set_tetrads(self,tetrads):
+    def set_tetrads(self,tetrads) -> None:
+        """Sets the tetrad variable to a list of 1-forms. Also creates the metric and inverse metric.
+        
+        Arguments:
+            - tetrads(List[DifferentialForm/DifferentialFormMul]): List of 1-forms
+        """
         self.tetrads = tetrads
+
         tetrads_D = [e.to_tensor() for e in tetrads]
-        self.metric = self.signature*tetrads_D[0]*tetrads_D[0]
-        for i in range(1,len(tetrads)):
-            self.metric += tetrads_D[i]*tetrads_D[i]
+        self.metric = self.signature*tetrads_D[0]*tetrads_D[0] + sum([tetrads_D[i]*tetrads_D[i] for i in range(1,self.dimension)])
+
         tetrad_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in tetrads])
         tetrad_matrix_inv = tetrad_matrix.inv().T
 
         self.tetrads_inv = [sum([tetrad_matrix_inv[I,u]*self.vectors[u] for u in range(self.dimension)]) for I in range(self.dimension)]
-        self.metric_inv = self.tetrads_inv[0]*self.tetrads_inv[0]
-        for i in range(1,self.dimension):
-            self.metric_inv += self.tetrads_inv[i]*self.tetrads_inv[i]
+        self.metric_inv = self.signature*self.tetrads_inv[0]*self.tetrads_inv[0] + sum([self.tetrads_inv[i]*self.tetrads_inv[i] for i in range(1,self.dimension)])
 
-    def get_basis(self): return self.basis
-    def get_vectors(self): return self.vectors
-    def get_metric(self): return self.metric
-    def get_inverse_metric(self): return self.metric_inv
-    def get_christoffel_symbols(self): 
+    def get_basis(self):
+        """ Returns the Manifold 1-forms basis."""
+        return self.basis
+
+    def get_vectors(self):
+        """Returns the Manifold VectorField basis."""
+        return self.vectors
+
+    def get_metric(self):
+        """Returns the Manifold metric."""
+        return self.metric
+    
+    def get_inverse_metric(self): 
+        """Returns the inverse metric for the Manifold"""
+        return self.metric_inv
+
+    def get_christoffel_symbols(self):
+        """ Returns the Christoffel symbols for the metric, calculates the Christoffel symbols for the metric if need be.""" 
         if self.christoffel_symbols == None:
             T_DDD = PartialDerivative(self.metric)
             g_UU_T_DDD = (self.metric_inv*T_DDD)
             Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
-            Gamma_UDD_2 = PermuteIndices(Gamma_UDD_1,(0,2,1))
-            Gamma_UDD_3 = Contract(g_UU_T_DDD,(1,2))
-            self.christoffel_symbols = simplify((Gamma_UDD_1 + Gamma_UDD_2 - Gamma_UDD_3)/2)
+            self.christoffel_symbols = simplify((Gamma_UDD_1 + PermuteIndices(Gamma_UDD_1,(0,2,1)) - Contract(g_UU_T_DDD,(1,2)))/2)
         return self.christoffel_symbols
 
-    def get_selfdual_twoforms(self,orientation=1):
+    def get_selfdual_twoforms(self,orientation:int=1):
+        """For a 4 dimensional Manifold, return the self-dual 2-forms in a given.
+        
+        Arguments:
+            - orientation(Integer): Changes which self-dual half the 2-forms are calculated in (i.e. anti-self-dual or self-dual).
+        """
         assert(len(self.tetrads)==4)
         sigma = 1 if self.signature == 1 else I
-        e0,e1,e2,e3 = self.tetrads
-        S1 = simplify(sigma*e0*e1-orientation*e2*e3)
-        S2 = simplify(sigma*e0*e2-orientation*e3*e1)
-        S3 = simplify(sigma*e0*e3-orientation*e1*e2)
-        self.selfdual_twoforms = [S1,S2,S3]
-        return S1,S2,S3
+        self.selfdual_twoforms = [sigma*self.tetrads[0]*self.tetrads[i+1]-orientation/Number(2)*sum([LeviCivita(i,j,k)*self.tetrads[j+1]*self.tetrads[k+1] for j,k in drange(3,2)]) for i in range(3)]
+        return self.selfdual_twoforms
     
     def get_selfdual_connections(self,twoforms):
-            S1,S2,S3 = twoforms
-            if self.basis == None: raise NotImplementedError("Basis unknown, set Manifold basis or pass basis as argument")
-
-            A_symbols = symbols(r"A^{1:4}_{0:4}",real=True)
-
-            A1 = sum([A_symbols[(1 -1)*4 + I]*self.basis[I] for I in range(4)])
-            A2 = sum([A_symbols[(2 -1)*4 + I]*self.basis[I] for I in range(4)])
-            A3 = sum([A_symbols[(3 -1)*4 + I]*self.basis[I] for I in range(4)])
-
-            dAS1 = (d(S1) + A2*S3-A3*S2).simplify()
-            dAS2 = (d(S2) + A3*S1-A1*S3).simplify()
-            dAS3 = (d(S3) + A1*S2-A2*S1).simplify()
-
-            A_solution = solve(dAS1.factors+dAS2.factors+dAS3.factors,A_symbols)
-
-            A1 = A1.subs(A_solution).simplify()
-            A2 = A2.subs(A_solution).simplify()
-            A3 = A3.subs(A_solution).simplify()
-
-            return A1,A2,A3
+        """ Returns the self-dual connection correponding to a triple of self-dual 2-forms. 
+        
+        Arguments:
+            - twoforms(List[DifferentialForm]): List of the triple of two forms
+        
+        Returns:
+            - List of self-dual connections as 3 DifferentialFormMul
+        """
+        if self.basis == None: raise NotImplementedError("Basis unknown, set Manifold basis or pass basis as argument")
+        A_symbols = symbols(r"A^{1:4}_{0:4}",real=True)
+        Ai = [sum([A_symbols[(i)*4 + I]*self.basis[I] for I in range(4)]) for i in range(3)]
+        dASi = [(d(twoforms[i]) + sum([LeviCivita(i,j,k)*Ai[j]*twoforms[k] for j,k in drange(3,2)])).simplify() for i in range(3)]
+        A_solution = solve([f for ds in dASi for f in ds.factors],A_symbols)
+        Ai = [A.subs(A_solution) for A in Ai]
+        return Ai
 
     def get_selfdual_curvatures(self,connections):
-        A1,A2,A3 = connections
-        F1 = d(A1) + A2*A3
-        F2 = d(A2) + A3*A1
-        F3 = d(A3) + A1*A2
-        return F1,F2,F3
+        """Returns the triple of self-dual curvatures, built from the self-dual connections. They are 2-forms.
 
-    def get_selfdual_curvature_matrix(self,curvatures,twoforms):
-        S1,S2,S3 = twoforms
-        sigma = 1 if S1.manifold.signature == 1 else I
-        volS = (S1*S1+S2*S2+S3*S3).get_factor(0)/sigma
-        W = Matrix([[(f*s).get_factor(0)/(2*volS) for s in twoforms] for f in curvatures])
-        return W
+        Arguments:
+            - connections(List[DifferentialFormMul]): A triple of 1-forms 
+        
+        Returns:
+            - List of 2-forms
+
+        """
+        return [d(connections[i]) + Number(1,2)*sum([LeviCivita(i,j,k)*connections[j]*connections[k] for j,k in drange(3,2)]) for i in range(3)]
+
+    def get_selfdual_component_vector(self,twoform,selfdual):
+        """Returns a 3 vector of self-dual components given a general 2-form
+
+        Arguments:
+            - twoform(List[DifferentialFormMul]):  Generic 2-form of which the self-dual matrix will be returned.
+            - selfdual(List[DifferentialFormMul]): Tripple of self-dual 2-forms.
+        
+        Returns:
+            - Matrix of 3x3 components (Can be complex).
+        """
+        
+        assert(twoform.degree == 2)
+        assert([s.degree for s in selfdual] == [2, 2, 2])
+
+        volSD = sum([s*s for s in selfdual]).get_factor(0)/(1 if selfdual[0].manifold.signature == 1 else I)
+        return [(twoform*s).get_factor(0)/(2*volSD) for s in twoforms]
 
     def get_metric_determinant(self):
-        assert(len(self.tetrads)==4)
-        vs = self.get_vectors()
-        g_metric = Matrix([[Contract(self.metric*u*v,(0,2),(1,3)) for v in vs] for u in vs])
-        return g_metric.det()
+        """Returns the determinant of the metric.
+
+        Returns:
+            - Scalar (numpy expression) that is the determinant.
+        """
+        assert(self.vectors != None)
+        assert(self.metric != None)
+        return Matrix([[Contract(self.metric*u*v,(0,2),(1,3)) for v in self.vectors] for u in self.vectors]).det()
         
 class VectorField():
+    """Class VectorField
+
+    Symbolic single term vector representation.
+
+    Attributes:
+        - symbol(Symbol): The symbol with which the derivative of the vector field will be taken. 
+
+    """
     def __init__(self,manifold:Manifold,symbol):
-        """
-        Class: Vector Field
+        """ Returns the vector field on a given Manifold and given the symbol that constitutes the derivative.
 
-        This class represents a single term in a vector fields component expansion, however, it is purely symbolic so no basis is required.
-
+        Arguments:
+            - manifold(Manifold): The manifold the vector will be associated too.
+            - symbol(Symbol): The symbolic symbol that the derivative is taken with respect too.
+        
+        Returns:
+            - VectorField
         """
         self.symbol = symbol
         self.manifold = manifold
     
-    def __eq__(self,other): return (self.symbol == other.symbol) and (self.manifold == other.manifold)
-    def __hash(self): return hash((self.symbol,self.manfiold))
+    def __eq__(self,other):
+        """ Checks if two vectors are equal.
+        """
+        return (self.symbol == other.symbol) and (self.manifold == other.manifold)
 
-    def __mul__(self,other): return TensorProduct(self,other)
-    def __rmul__(self,other): return TensorProduct(other,self)
+    def __hash__(self):
+        """ Generates a unique hash for each VectorField.
+        """
+        return hash((self.symbol,self.manfiold))
+
+    def __mul__(self,other):
+        """ Multiplies two VectorFields together using the tensor project. """
+        return TensorProduct(self,other)
+    
+    def __rmul__(self,other): 
+        """Right multiplication version of __mul__. """
+        return TensorProduct(other,self)
 
     def __neg__(self):
+        """Return the negative of a vector field as a Tensor. """
         ret = Tensor()
         ret.comps_list = [[self]]
         ret.factors = [-1]
         return ret
     
-    def __sub__(self,other): return self + (-other)
-    def __rsub__(self,other): return (-self) + other
+    def __sub__(self,other):
+        """Returns the difference of two vectors fields as a Tensor. """
+        return self + (-other)
+    
+    def __rsub__(self,other):
+        """Right subtraction of __sub__. """
+        return (-self) + other
     
     def __add__(self,other):
+        """Add together the VectorField with Scalar/Tensor/VectorField/DifferentialForm. """
         ret = Tensor(self.manifold)
         ret.comps_list = [[self]]
         ret.factors = [1]
@@ -166,14 +265,23 @@ class VectorField():
             raise NotImplementedError
         
         return ret
-    def __radd__(self,other): return self+other
+    
+    def __radd__(self,other): 
+        """Right addition of __add__. """
+        return self+other
         
     def _repr_latex_(self):
+        """Returns a latex string for the vector field. """
         return "$\\partial_{"+latex(self.symbol)+"}$"
 
-    def __str__(self): return "\\partial_{"+latex(self.symbol)+"}"
+    def __str__(self):
+        """Returns the String of the symbol."""
+
+        # For some reason latex(symbol) doesn't work here in my implementation, need to see why.
+        return f"\partial_{{{str(self.symbol)}}}"
 
     def conjugate(self):
+        """Returns the complex conjugate of the VectorField. """
         return VectorField(self.manifold,conjugate(self.symbol))
 
     __repr__ = _repr_latex_
@@ -181,13 +289,40 @@ class VectorField():
     _print   = _repr_latex_
 
 class Tensor(): 
+    """ Class Tensor
+
+    Represents a poly-tensor, a poly-tensor is an arbitrary sum of any number of products of the tangent and cotangent space.
+    
+    For example, a Tensor could be "t = a + b + a*b" where "a" is a DifferentialForm and "b" is a VectorField.
+
+    Attributes:
+        - manifold(Manifold): The Manifold that the Tensor is defined on.
+        - comps_list(List[VectorField/DifferentialForm]): List of lists that contain either a VectorField or DifferentialForm. Each sub list is a product and the top most list is the addition of the sublists.
+        - factors(List[Integer/Float/Expr]): List of factors that appear infront the product of basis VectorField/DifferentialForm product.
+    """
     def __init__(self, manifold:Manifold):
+        """Returns and empty Tensor that, mostly used as a tempory storage for a new Tensor. 
+        
+        Arguments:
+            - manifold(Manifold): The Manifold the Tensor is defined on.
+
+        Returns:
+            Empty Tensor with a Manifold.
+        """
         self.__sympy__ = True
         self.manifold = manifold
         self.comps_list = []
         self.factors = []
     
     def __add__(self,other):
+        """Adds a Int/Float/Expr/DifferentialForm/VectorField/Tensor with the Tensor field.
+        
+        Arguments:
+            - other(Int/Float/Expr/DifferentialForm/VectorField/Tensor): Other Tensor/Vector/DifferentialForm/Scalar to add to the Tensor.
+
+        Returns:
+            Tensor Field
+         """
         ret = Tensor(self.manifold)
         ret.comps_list += self.comps_list.copy()
         ret.factors += self.factors.copy()
@@ -208,34 +343,53 @@ class Tensor():
             ret = self + DifferentialForm(self.manifold,other,0)
         else:
             raise NotImplementedError
-        ret.collect_comps()
+        ret._collect_comps()
         return ret
     
     def __radd__(self,other):
+        """Right addition of __add__. """
         return self + other
 
     def __sub__(self,other):
+        """Subtract Int/Float/Expr/DifferentialForm/VectorField/Tensor from Tensor. """
         return self + (-other)
     
     def __rsub__(self,other):
+        """Right Subtraction of __sub__. """
         return other + (-self)
 
     def __neg__(self):
+        """Return the negative of the Tensor. """
         ret = Tensor(self.manifold)
         ret.comps_list = self.comps_list.copy()
         ret.factors = [-f for f in self.factors]
         return ret
 
     def __mul__(self,other):
+        """Return the tensor product of this Tensor with another object. """
         return TensorProduct(self,other)
 
     def __rmul__(self,other):
+        """Right multiplication version of __mul__. """
         return TensorProduct(other,self)
 
-    def __div__(self,other): return TensorProduct(self,1/Number(other))
-    def __truediv__(self,other): return TensorProduct(self,1/Number(other))
+    def __div__(self,other): 
+        """ Divide the tensor by a Scalar. """
+        return TensorProduct(self,1/Number(other))
+
+    def __truediv__(self,other): 
+        """True divide the tensor by a Scalar. """
+        return TensorProduct(self,1/Number(other))
 
     def __getitem__(self,indices):
+        """Overloads the indexing operation to swap the order of the Tensor components.
+        
+        Arguments:
+            - indices(List[Integer]): List of new order of indices that the Tensor bases should be.
+        
+        Return:
+            Permuted Tensor.
+         """
         s_weight = self.get_weight()
         if len(indices) != len(s_weight): raise IndexError("Indices not of correct form")
         if set(list(indices)) != set(range(len(s_weight))): raise IndexError("Each index must appear once and only once")
@@ -243,21 +397,24 @@ class Tensor():
         return PermuteIndices(self,list(indices))
 
     def _repr_latex_(self):
+        """Returns the LaTeX String related to the Tensor. """
         if not _PRINT_ARGUMENTS:
             latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
         else: 
-            latex_str = "$" + "+".join([ "(" + latex(self.factors[i]) + ")" + r" \otimes ".join([str(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
+            latex_str = "$" + "+".join([ "(" + latex(self.factors[i]) + ")" + r" \otimes ".join([latex(f) for f in self.comps_list[i]]) for i in range(len(self.comps_list))])  + "$"
         if latex_str == "$$":
             return "$0$"
         return latex_str
     
     def is_vectorfield(self):
+        """Check if a Tensor contains only VectorField components, and is valued in the Tangent space only. """
         for f in self.comps_list:
             if len(f) != 1 or not isinstance(f[0],VectorField):
                 return False
         return True
     
     def get_weight(self):
+        """ Returns the "weight" (weight is a number that ) """
         if len(self.factors) == 0: return (0,0)
         first_weight = tuple(map(lambda x: int(isinstance(x,VectorField))-int(isinstance(x,DifferentialForm)),self.comps_list[0]))
         for i in range(1,len(self.factors)):
@@ -265,15 +422,16 @@ class Tensor():
             if current_weight != first_weight: return (None)
         return first_weight
 
-    def get_component(self,i):
-        ret = Tensor(self.manifold)
-        ret.comps_list = [self.comps_list[i].copy()]
-        ret.factors = [self.factors[i]]
-        return ret
+    def get_component(self,i:int):
+        """Get the i-th component in the order that the factors list in in. """
+        return self.factors[i]
 
-    def collect_comps(self):
+    def _collect_comps(self):
+
         new_comps_list = []
         new_factors = []
+        
+        # Collect terms with the same basis.
         for i in range(len(self.comps_list)):
             if self.comps_list[i] not in new_comps_list:
                 new_comps_list.append(self.comps_list[i])
@@ -282,16 +440,13 @@ class Tensor():
                 j = new_comps_list.index(self.comps_list[i])
                 new_factors[j] += self.factors[i]
         
+        # Remove the terms with zero factors, zero basis elements or absorb and identity basis element.
         i = 0
         while  i < len(new_comps_list):
             if new_factors[i] == 0:
                 del new_factors[i]
                 del new_comps_list[i]
                 continue
-            i+=1
-    
-        i = 0
-        while i < len(new_comps_list):
             new_comps_strings = [str(f) for f in new_comps_list[i]]
             if '0' in new_comps_strings:
                 del new_comps_list[i]
@@ -305,13 +460,24 @@ class Tensor():
         self.factors = new_factors
 
     def _eval_simplify(self, **kwargs):
+        """Internal function for Sympy simplify call. """
         ret = Tensor(self.manifold)
         ret.comps_list = self.comps_list.copy()
         ret.factors = [simplify(f) for f in self.factors]
-        ret.collect_comps()
+        ret._collect_comps()
         return ret
 
     def subs(self,target,sub=None,simp=True):
+        """Substitute function that replaces components or basis elements with any Tensor components. 
+        
+        Arguments:
+            - target(Scalar/VectorField/DifferentialForm): The object that is being replaced by the substition algorithm.
+            - sub(Scalar/VectorField/DifferentialForm[Mul]/Tensor): The object that will replace the target.
+            - simp(Boolean): Boolean that decides if to simplify factors of the result.
+        
+        Returns:
+            Tensor tensor with target replaced.
+        """
         ret = Tensor(self.manifold)
         ret.factors = self.factors.copy()
         ret.comps_list = self.comps_list.copy()
@@ -377,32 +543,36 @@ class Tensor():
         if simp: ret = simplify(ret)
         return ret
 
-    def get_factor(self,index):
+    def get_factor(self,index:int):
+        """Return the factor in the order of the factors list. 
+        
+        Arguments:
+            - index(Integer): Index of the factor.
+
+        Returns:
+            Scalar that is the factor.
+        """
         if len(self.factors) == 0: return 0
         return self.factors[index]
     
     def simplify(self):
+        """ Simplify the factors of a component. """
         ret = Tensor(self.manifold)
         ret.factors = [f.simplify() for f in self.factors]
         ret.comps_list = self.comps_list.copy()
-        ret.collect_comps()
+        ret._collect_comps()
         return ret
 
     def factor(self):
+        """Factor the components of a factor. """
         ret = Tensor(self.manifold)
         ret.factors = [f.factor() for f in self.factors]
         ret.comps_list = self.comps_list.copy()
-        ret.collect_comps()
-        return ret
-
-    def conjugate(self):
-        ret = Tensor(self.manifold)
-        ret.factors = [f.conjugate() for f in self.factors]
-        ret.comps_list = self.comps_list.copy()
-        ret.collect_comps()
+        ret._collect_comps()
         return ret
 
     def to_differentialform(self):
+        """ Project a Tensor that is purely built from DifferentialForm's to a true DifferentialForm built with the WedgeProduct. """
         if set(self.get_weight()) != set([-1]): raise TypeError("Tensor cannot be projected to a differential form")
         ret = DifferentialFormMul(self.manifold)
         ret.factors = self.factors.copy()
@@ -424,19 +594,37 @@ class Tensor():
     _print    = _repr_latex_
 
     def conjugate(self):
+        """ Return the complex conjugate of the Tensor. """
         ret = Tensor(self.manifold)
         ret.comps_list = [[f.conjugate() for  f in f_list] for f_list in self.comps_list]
         ret.factors = [conjugate(f) for f in self.factors]
         return ret
 
 class DifferentialForm():
-    def __init__(self,manifold,symbol,degree=0, exact=False):
-        """
-        Class: Differential Form
+    """
+    Class: Differential Form
 
-        This is the "atom" of a differential form in this package. It holds all the information needed for a generic differential form.
+    This is the "atom" of a differential form. Holds a 1-form with 1 term.
+
+    Attributes:
+        - manifold(Manifold): Manifold the differential form exists on.
+        - degree(Integer):    Degree of the differential form.
+        - symbol(Symbol):     The Sympy symbol that represents the form.
+        - exact(Boolean):     True/False depending on if the differential form is exact or not.    
+    """
+
+    def __init__(self,manifold,symbol,degree=0, exact=False):
+        """Intialise the Differential form
         
-        """
+        Arguments:
+            - manifold(Manifold): The Manifold for the differential form.
+            - symbol(Symbol):     The symbol to represent the differential form.
+            - degree(Integer):    The degree of the form, must be greater than 0 and less than or equal to the dimension of the manifold.
+            - exact(Boolean):     True if the form is closed and the exterior derivative is automatically zero. False otherwise.
+        
+        Returns:
+            DifferentialForm represented bt the symbol.
+         """
         self.manifold = manifold
         self.degree = degree
         self.symbol = symbol
@@ -444,22 +632,37 @@ class DifferentialForm():
         if degree < 0 or degree > self.manifold.dimension:
             self.symbol = Rational(0)
         
-    def __eq__(self,other): return (self.symbol == other.symbol) and (self.degree == other.degree)
-    def __hash__(self): return hash((str(self.symbol),self.degree))
+    def __eq__(self,other):
+        """ Compares if two differential forms are equal. """
+        if not isinstance(other,DifferentialForm): return False
+        return (self.symbol == other.symbol) and (self.degree == other.degree)
+    
+    def __hash__(self): 
+        """ Unique hash for a differential form. """
+        return hash((str(self.symbol),self.degree))
 
     def __mul__(self,other): 
+        """ Multiplies the DifferentialForm with a Tensor/VectorField to produce a Tensor, or another DifferentialForm to produce a DifferentialFormMul. """
         if isinstance(other,(Tensor,VectorField)):
             return TensorProduct(self,other)
         return WedgeProduct(self,other)
 
     def __rmul__(self,other): 
+        """Right multiplication of __mul__. """
         if isinstance(other,(Tensor,VectorField)):
             return TensorProduct(other,self)
         return WedgeProduct(other,self)
-    def __div__(self,other): return WedgeProduct(self,1/other)
-    def __truediv__(self,other): return WedgeProduct(self,1/other)
+    
+    def __div__(self,other):
+        """Divide the DifferentialForm by another object. """
+        return WedgeProduct(self,1/other)
+    
+    def __truediv__(self,other): 
+        """Truediv version of __div__. """
+        return WedgeProduct(self,1/other)
 
     def __add__(self,other):
+        """Add together DifferentialForm and another object. """
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = [[self]]
         ret.factors = [1]
@@ -478,7 +681,12 @@ class DifferentialForm():
         ret.collect_forms()
         return ret
     
+    def __radd__(self,other): 
+        """Right addition version of __add__. """
+        return self + other
+
     def __lt__(self,other):
+        """Less that operator to order differential forms. Ordered alphabetically by the String of the symbol. """
         if not isinstance(other,DifferentialForm): raise NotImplementedError
         if str(self.symbol) < str(other.symbol):
             return True
@@ -487,31 +695,57 @@ class DifferentialForm():
         else:
             return (self.degree) < other.degree
 
-    def __neg__(self): return DifferentialFormMul(self.manifold,self,-1)
-    def __sub__(self,other): return self + (-other)
-    def __rsub__(self,other): return (-self) + other
-    def __radd__(self,other): return self + other
+    def __neg__(self):
+        """Return the negative of a Differential Form. """
+        return DifferentialFormMul(self.manifold,self,-1)
+    
+    def __sub__(self,other):
+        """Subtract an object from the DifferentialForm. """
+        return self + (-other)
+    
+    def __rsub__(self,other): 
+        """Right subtraction version of __sub__. """
+        return (-self) + other
 
-    def __str__(self): return latex(self.symbol)
+    def __str__(self):
+        """Returns the LaTeX String of the symbol. """
+        return latex(self.symbol)
 
-    def _repr_latex_(self): return self.symbol._repr_latex_()
+    def _repr_latex_(self):
+        """Sympy internal call that returns the LaTeX string of the symbol. """
+        return self.symbol._repr_latex_()
 
-    def __hash__(self): return hash((self.symbol,self.degree))
+    def __hash__(self):
+        """Unique hash for a DifferentialForm. """
+        return hash((self.symbol,self.degree))
 
-    def to_tensor(self): return (Number(1)*self).to_tensor()
+    def to_tensor(self):
+        """Converts a DifferentialForm to a Tensor, such that multiplication uses the TensorProduct instead of WedgeProduct. """
+        return (Number(1)*self).to_tensor()
     
     __repr__ = _repr_latex_
     _latex   = _repr_latex_
     _print   = _repr_latex_
     
     def __eq__(self,other):
+        """Tests if two DifferentialForms are equivalent. """
         if isinstance(other,DifferentialForm):
             return str(self.symbol) == str(other.symbol) and self.degree == other.degree
+        return False
 
     def _eval_simplify(self, **kwargs):
+        """Overrides sympy internal simplify call to return self. This object is already simplified by construction. """
         return self
     
     def insert(self,vector:VectorField):
+        """ Insert a VectorField into the DifferentialForm. 
+        
+        Arguments:
+            - vector(VectorField): The vector field that will be inserted into the DifferentialForm.
+        
+        Returns:
+            Contraction of the DifferentialForm and VectorField as a Scalar.
+        """
         if isinstance(vector,VectorField):
             if self.symbol == vector.symbol or str(self.symbol) == "d\\left("+str(vector.symbol)+"\\right)": return 1
             else: return Number(0)
@@ -521,12 +755,18 @@ class DifferentialForm():
         else:
             raise NotImplementedError
 
-    def __getitem__(self,index):
-        if len(self.factors) == 0: return 0
-        return self.factors[index]
-
     @property
     def d(self):
+        """ Exterior derivative of the differential form, in the given manifold. 
+        
+        Computes the Exterior Derivative of a differential form. If the differential field is purely symbol it returns zero if self.exact=True.
+        Allows for purely symbolic differential forms by return a new differental form with symbol = "d(old_symbol)" which is exact (closed).
+
+        Returns:
+            DifferntialFormMul
+
+        """
+
         if self.exact: return DifferentialForm(self.manifold,Number(0),self.degree+1,exact=True)
         elif isinstance(self.symbol,Number): return DifferentialForm(self.manifold,Number(0),self.degree+1,exact=True)
         else:
@@ -535,6 +775,15 @@ class DifferentialForm():
         raise NotImplementedError
 
     def subs(self,target,sub=None):
+        """Substitute function that replaces a differential with another DifferentialForm components.
+        
+        Arguments:
+            - target(DifferentialFormMul): The object that is being replaced by the substition algorithm.
+            - sub(Scalar/DifferentialForm): The object that will replace the target.
+        
+        Returns:
+            DifferentialForm with target replaced.
+        """
         if target == self: return sub
         elif isinstance(target,DifferentialFormMul):
             if len(target.factors) == 1 and target.forms_list == [[self]]:
@@ -551,10 +800,30 @@ class DifferentialForm():
             return ret
 
     def conjugate(self):
+        """Return the complex conjugate of a DifferentialForm. """
         return DifferentialForm(self.manifold,conjugate(self.symbol),self.degree,self.exact)
 
 class DifferentialFormMul():
+    """ Class: DifferentialFormMul
+
+    Contains sums of products of the DifferentialForm class as a basis.
+
+    Attributes:
+        - forms_list(List[List[DifferentialForm]]): List of lists where the sub lists contaion the wedge product of DifferentialForms and the outer list represents the sum.
+        - factors(List[Scalar]):                    List of factors for each term in the outer list of forms_list.
+    """
+
     def __init__(self,manifold:Manifold,form:DifferentialForm=None,factor:AtomicExpr=None):
+        """Initialise the DifferentialFormMul class, mostly used as a empty differential form to modify.
+        
+        Arguments:
+            - manifold(Manifold):     Manifold on which the differential form is defined.
+            - form(DifferentialForm): Used to create a differential form with 1 term.
+            - factor(AtomicExpr):     Factor used to create differential form with 1 term.
+
+        Returns:
+            Empty or 1 term DifferentialForm.
+         """
         self.__sympy__ = True
         if form == None:
             self.forms_list = []
@@ -565,6 +834,7 @@ class DifferentialFormMul():
         self.manifold = manifold
  
     def __add__(self,other):
+        """ Adds another object to a differential form. """
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = self.forms_list.copy()
         ret.factors = self.factors.copy()
@@ -592,11 +862,13 @@ class DifferentialFormMul():
         return ret
     
     def __mul__(self,other): 
+        """Multiply differential form with form/vectorfield or scalar. """
         if isinstance(other,(Tensor,VectorField)):
             return TensorProduct(self,other)
         return WedgeProduct(self,other)
     
     def __rmul__(self,other): 
+        """Right multiplication version of __mul__. """
         if isinstance(other,(Tensor,VectorField)):
             return TensorProduct(other,self)
         return WedgeProduct(other,self)
@@ -615,6 +887,7 @@ class DifferentialFormMul():
     def __rsub__(self,other): return other + (-self)
 
     def __eq__(self,other):
+        """Checks if two differential forms are equivalent. """
         if isinstance(other,DifferentialForm) and self.factors == [1] and len(self.forms_list[0]) == 1: return other == self.forms_list[0][0]
         elif not isinstance(other,DifferentialFormMul): raise NotImplementedError
         elif other.factors != self.factors: return False
@@ -622,12 +895,14 @@ class DifferentialFormMul():
         return True
 
     def __hash__(self): 
+        """Unique hash for differential forms. """
         symbols = []
         for forms in self.forms_list: symbols+=forms
         symbols += self.factors
         return hash(tuple(symbols))
 
     def insert(self,other):
+        """Insert a VectorField into a differential form. """
         if isinstance(other,VectorField):
             ret = DifferentialFormMul(self.manifold)
             for i in range(len(self.forms_list)):
@@ -654,6 +929,7 @@ class DifferentialFormMul():
         return ret
 
     def remove_squares(self):
+        """Removes the square of a 1-form. """
         i = 0
         while i < len(self.forms_list):
             deled = False
@@ -667,6 +943,7 @@ class DifferentialFormMul():
             if not deled: i+=1
         
     def remove_above_top(self):
+        """Removes any differential form with degree above the top form. """
         i = 0
         while i < len(self.forms_list):
             if sum([f.degree for f in self.forms_list[i]]) > self.manifold.dimension:
@@ -676,6 +953,7 @@ class DifferentialFormMul():
             i += 1
 
     def sort_form_sums(self):
+        """Order the form product in consitent order. """
         for i in range(len(self.forms_list)):
             bubble_factor = 1
             for j in range(len(self.forms_list[i])):
@@ -688,6 +966,7 @@ class DifferentialFormMul():
             self.factors[i] = self.factors[i]*bubble_factor
     
     def collect_forms(self):
+        """Collect terms that have the same basis. Also remove terms that are zero after insertion or collapse indentity term. """
         new_forms_list = []
         new_factors = []
         for i in range(len(self.forms_list)):
@@ -721,6 +1000,7 @@ class DifferentialFormMul():
         self.factors = new_factors
             
     def _repr_latex_(self):
+        """Return the LaTeX String for a differential form. """
         if not _PRINT_ARGUMENTS:
             latex_str = "$" + "+".join([ "(" + remove_latex_arguments(self.factors[i]) + ")" + r" \wedge ".join([str(f) for f in self.forms_list[i]]) for i in range(len(self.forms_list))]) + "$"
         else:
@@ -730,6 +1010,7 @@ class DifferentialFormMul():
         return latex_str
 
     def get_factor(self,index):
+        """Returns the factor at the index give, factors are in an arbitrary order. """
         if len(self.factors) == 0: return 0
         return self.factors[index]
 
@@ -742,6 +1023,7 @@ class DifferentialFormMul():
 
     @property
     def d(self):
+        """Take the Exterior derivative of a differential form. """
         ret = DifferentialFormMul(self.manifold)
         new_forms_list = []
         new_factors_list = []
@@ -769,6 +1051,7 @@ class DifferentialFormMul():
         return ret
 
     def _eval_simplify(self, **kwargs):
+        """Override sympy internal simplify call for differential form. """
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = self.forms_list.copy()
         ret.factors = [simplify(f,kwargs=kwargs) for f in self.factors]
@@ -781,6 +1064,7 @@ class DifferentialFormMul():
         return ret
     
     def subs(self,target,sub=None):
+        """Substitute factors or 1 term differential forms in a generic differential form. """
         ret = DifferentialFormMul(self.manifold)
         ret.factors = self.factors
         ret.forms_list = self.forms_list
@@ -853,6 +1137,7 @@ class DifferentialFormMul():
         return ret
 
     def to_tensor(self):
+        """Converts a DifferentialForm to a Tensor object. """
         ret = Tensor(self.manifold)
         for i in range(len(self.factors)):
             L = len(self.forms_list[i])
@@ -863,12 +1148,14 @@ class DifferentialFormMul():
         return ret
 
     def get_degree(self):
+        """Returns the degree of a differential form. """
         weights = [sum(map(lambda x: x.degree,f)) for f in self.forms_list]
         if len(set(weights)) == 1:
             return weights[0]
         return None
 
     def get_component_at_basis(self,basis=None):
+        """Returns the compnent as a given basis of 1-forms. """
         basis_comp = basis
         if isinstance(basis,DifferentialFormMul):
             assert(len(basis.factors) == 1)
@@ -884,10 +1171,12 @@ class DifferentialFormMul():
                 return self.factors[i]
         return 0
 
-    def simplify(self): 
+    def simplify(self):
+        """ Returns the simplification of a differential form. """
         return self._eval_simplify()
 
     def eval_sympy_func(self,func, **kwargs):
+        """ Evaluate a sympy function on the factors of a differential form. """
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = self.forms_list.copy()
         ret.factors = [func(f,kwargs) for f in self.factors]
@@ -897,6 +1186,7 @@ class DifferentialFormMul():
         return ret
 
     def factor(self):
+        """Factor the components of a differential form. """
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = self.forms_list.copy()
         ret.factors = [simplify(f) for f in self.factors]
@@ -909,18 +1199,21 @@ class DifferentialFormMul():
         return ret    
 
     def expand(self):
+        """Expand the component factors of a differential form. """
         ret = DifferentialFormMul(self.manifold)
         ret.factors = [f.expand() for f in self.factors]
         ret.forms_list = self.forms_list
         return ret
 
     def conjugate(self):
+        """Return the complex conjugate of a differential form. """
         ret = DifferentialFormMul(self.manifold)
         ret.forms_list = [[f.conjugate() for f in f_list] for f_list in self.forms_list]
         ret.factors = [conjugate(f) for f in self.factors]
         return ret
 
 def remove_latex_arguments(object):
+    """ Remove the arguments from sympy functions and return the LaTeX string. """
     if hasattr(object,'atoms'):
         functions = object.atoms(Function)
         reps = {}
@@ -932,13 +1225,17 @@ def remove_latex_arguments(object):
     return latex_str
 
 def display_no_arg(object):
+    """Display an object without the arguments in sympy functions. """
     latex_str = remove_latex_arguments(object)
     display(Math(latex_str))
 
-def DefScalars(names:str,**args)->Symbol:
+def scalars(names:str,**args)->Symbol:
+    """Overrides the symbols class for sympy (probably not needed but useful for semantics). """
     return symbols(names,**args)
 
-def DefDifferentialForms(manifold:Manifold,symbs:list,degrees:list):
+def differentialforms(manifold:Manifold,symbs:list,degrees:list):
+    """Returns a differential form given a list of symbols and degrees. """
+    # TODO: Explain how this works with the different cases of symbols and degrees.
     ret = None
     if isinstance(symbs,str):
         ret = DefDifferentialForms(manifold,list(symbols(symbs)),degrees)
@@ -959,7 +1256,8 @@ def DefDifferentialForms(manifold:Manifold,symbs:list,degrees:list):
         return ret[0]
     return ret
 
-def DefVectorFields(manifold:Manifold,symbs:list):
+def vectorfields(manifold:Manifold,symbs:list):
+    """Returns vector fields corresponding to the symbols given, on the manifold provided. """
     ret = None
     if isinstance(symbs,str):
         ret = DefVectorFields(manifold,list(symbols(symbs)))
@@ -973,14 +1271,15 @@ def DefVectorFields(manifold:Manifold,symbs:list):
         return ret[0]
     return ret
 
-def DefConstants(names:str, **assumptions)->symbols:
+def constants(names:str, **assumptions)->symbols:
     """ Uses the Quantity function to create constant symbols. """
     names = re.sub(r'[\s]+', ' ', names)
-    constants = [Quantity(c,**assumptions) for c in names.split(' ') if c != '']
-    if len(constants) == 1: return constants[0]
-    return constants
+    consts = [Quantity(c,**assumptions) for c in names.split(' ') if c != '']
+    if len(consts) == 1: return consts[0]
+    return consts
 
 def d(form,manifold=None):
+    """Computes the exterior derivative of differential forms. """
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
         return form.d
     
@@ -1001,7 +1300,8 @@ def d(form,manifold=None):
 
     raise NotImplementedError
 
-def PartialDerivative(tensor,manifold=None):
+def pdiff(tensor,manifold=None):
+    """Computes the partial derivative of an object on the manifold provided. """
     if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
         return PartialDerivative((1*tensor).to_tensor(),manifold)
     elif isinstance(tensor,(VectorField)):
@@ -1012,7 +1312,7 @@ def PartialDerivative(tensor,manifold=None):
         for i in range(manifold.dimension):
             ret.comps_list += [[manifold.basis[i]]]
             ret.factors += [tensor.diff(manifold.coords[i])]
-        ret.collect_comps()
+        ret._collect_comps()
         return ret
     elif isinstance(tensor,Tensor):
         ret = Tensor(tensor.manifold)
@@ -1021,11 +1321,12 @@ def PartialDerivative(tensor,manifold=None):
             for j in range(len(tensor.factors)):
                 ret.comps_list += [[man.basis[i]]+tensor.comps_list[j]]
                 ret.factors += [tensor.factors[j].diff(man.coords[i])]
-        ret.collect_comps()
+        ret._collect_comps()
         return ret
     return 0
 
-def CovariantDerivative(tensor,manifold=None):
+def cdiff(tensor,manifold=None):
+    """Computes the covariant derivative, with respect to the metric, on the manifold provided. """
     if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
         return CovariantDerivative((Number(1)*tensor).to_tensor(),manifold)
     elif isinstance(tensor,VectorField):
@@ -1036,7 +1337,7 @@ def CovariantDerivative(tensor,manifold=None):
         for i in range(manifold.dimension):
             ret.comps_list += [[manifold.basis[i]]]
             ret.factors += [tensor.diff(manifold.coords[i])]
-        ret.collect_comps()
+        ret._collect_comps()
         return ret
     elif isinstance(tensor,Tensor):
         t_weight = tensor.get_weight()
@@ -1055,6 +1356,7 @@ def CovariantDerivative(tensor,manifold=None):
         return CD_tensor
 
 def WedgeProduct(left,right,debug=False):
+    """Wedge product multiplication for differential forms. """
     ret = None
     if isinstance(left,(int,float,Number,AtomicExpr,Expr)):
         left = left if not isinstance(left,(int,float)) else Number(left)
@@ -1118,6 +1420,7 @@ def WedgeProduct(left,right,debug=False):
     return ret
 
 def TensorProduct(left,right):
+    """Tensor product of two objects on the same manifold. """
     if isinstance(left,DifferentialFormMul) or isinstance(right,DifferentialFormMul): raise NotImplementedError("Must convert DifferentialFormMul into Tensor before using with TensorProduct")
     ret = None
     if isinstance(left,(int,float,AtomicExpr,Expr)):
@@ -1186,13 +1489,14 @@ def TensorProduct(left,right):
             raise NotImplementedError
     else:
         raise NotImplementedError
-    ret.collect_comps()
+    ret._collect_comps()
 
     if ret.comps_list == [[]] or ret.comps_list == []:
         return 0 if ret.factors == [] else ret.factors[0]
     return ret
 
 def Contract(tensor,*positions):
+    """Contract two tensors, given a list of pairs of indices to contract. Contraction must be between a differential form and vector field. """
     if isinstance(tensor,(int,float,Number)): return tensor
     elif not isinstance(tensor,Tensor): raise TypeError("First argument must be a Tensor.")
     if tensor.comps_list == [[]] or tensor.comps_list == []:
@@ -1228,12 +1532,13 @@ def Contract(tensor,*positions):
         if sign != 0:
             ret.comps_list += [total_without]
             ret.factors += [tensor.factors[i]*sign]
-    ret.collect_comps()
+    ret._collect_comps()
     if ret.comps_list ==[[]]: return ret.factors[0]
     if ret.comps_list == []: return Number(0)
     return ret
 
 def PermuteIndices(tensor,new_order):
+    """Permute the basis elements of a tensor, given a new basis order. """
     if isinstance(tensor,(int,float,Number)): return tensor
     t_weight = tensor.get_weight()
     if (len(new_order)!=len(t_weight)): raise NotImplementedError("New index order must contain every index")
@@ -1243,10 +1548,11 @@ def PermuteIndices(tensor,new_order):
         ret.factors += [tensor.factors[i]]
         ret.comps_list += [[tensor.comps_list[i][j] for j in new_order]]
     
-    ret.collect_comps()
+    ret._collect_comps()
     return ret
 
 def LieDerivative(vector,tensor):
+    """Compute the Lie derivative of a tensor given a vector field. """
     if not isinstance(vector,(Tensor,VectorField)): raise TypeError("First argument for the Lie derivative must be a vector")
     if isinstance(vector,Tensor) and vector.get_weight() != (1,): return TypeError("First argument for the Lie derivative must be a vector")
     if isinstance(tensor,(DifferentialFormMul,DifferentialForm)):
@@ -1269,6 +1575,7 @@ def LieDerivative(vector,tensor):
     raise NotImplementedError("Only the Tensor class and the Differential form class can be acted on by the LieDerivative")
 
 def FormsListInBasisMatrix(formslist:dict, basis=None) -> Matrix:
+    """Create a matrix from a list of 1-form and basis forms. The components of the matrix are the factors for each basis element in the 1-forms in a block matrix. """
     if basis == None:
         if formslist[0].manifold.basis == None: raise NotImplementedError("Need to set a basis for the manifold.")
         basis = formslist[0].manifold.basis
@@ -1291,6 +1598,8 @@ def FormsListInBasisMatrix(formslist:dict, basis=None) -> Matrix:
     return return_matrix
     
 def SO3TwoFormProduct(Si,Bi):
+    """Special product that exists in the context of SU(2) structures. """
+    ### TODO: Simplify this and compact the notation
     g_UU = Si[0].manifold.get_inverse_metric()
     S1_DD,S2_DD,S3_DD = [2*s.to_tensor() for s in Si]
     B1_DD,B2_DD,B3_DD = [2*b.to_tensor() for b in Bi]
@@ -1305,6 +1614,8 @@ def SO3TwoFormProduct(Si,Bi):
     return [R1,R2,R3]
 
 def Hodge(form):
+    """Computes the hodge star of a differntial form given the corresponding manifold has a metric and basis 1-forms defined. """
+    # TODO: Actually implement this, will be very useful.
     basis = form.manifold.basis
     dim = form.manifold.dimension
     degree = form.get_degree()
