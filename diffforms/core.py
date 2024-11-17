@@ -16,7 +16,7 @@ _PRINT_ARGUMENTS = False
 #   Generalise manifold to any signature dimension
 #   Find a better way to describe the VectorField class
 
-def drange(n,d): return variations(range(n),d)
+def drange(n,d,repetition=True): return variations(range(n),d,repetition)
 
 class Manifold():
     """Class: Manifold
@@ -78,7 +78,7 @@ class Manifold():
         assert(len(coordinates) == self.dimension)
         self.coords = coordinates
         self.basis = [DifferentialForm(self,c,0).d for c in coordinates]
-        self.vectors = DefVectorFields(self,coordinates)
+        self.vectors = vectorfields(self,coordinates)
     
     def set_tetrads(self,tetrads) -> None:
         """Sets the tetrad variable to a list of 1-forms. Also creates the metric and inverse metric.
@@ -278,7 +278,7 @@ class VectorField():
         """Returns the String of the symbol."""
 
         # For some reason latex(symbol) doesn't work here in my implementation, need to see why.
-        return f"\partial_{{{str(self.symbol)}}}"
+        return fr"\partial_{{{str(self.symbol)}}}"
 
     def conjugate(self):
         """Returns the complex conjugate of the VectorField. """
@@ -1238,7 +1238,7 @@ def differentialforms(manifold:Manifold,symbs:list,degrees:list):
     # TODO: Explain how this works with the different cases of symbols and degrees.
     ret = None
     if isinstance(symbs,str):
-        ret = DefDifferentialForms(manifold,list(symbols(symbs)),degrees)
+        ret = differentialforms(manifold,list(symbols(symbs)),degrees)
     elif isinstance(symbs,list):
         if isinstance(degrees,list):
             assert(len(symbs) == len(degrees))
@@ -1260,7 +1260,7 @@ def vectorfields(manifold:Manifold,symbs:list):
     """Returns vector fields corresponding to the symbols given, on the manifold provided. """
     ret = None
     if isinstance(symbs,str):
-        ret = DefVectorFields(manifold,list(symbols(symbs)))
+        ret = vectorfields(manifold,list(symbols(symbs)))
     elif isinstance(symbs,(list,tuple)):
         ret = [VectorField(manifold,s) for s in symbs]
     elif isinstance(symbs,Symbol):
