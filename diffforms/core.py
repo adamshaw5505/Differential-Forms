@@ -1300,7 +1300,7 @@ def d(form,manifold=None):
 
     raise NotImplementedError
 
-def pdiff(tensor,manifold=None):
+def PartialDerivative(tensor,manifold=None):
     """Computes the partial derivative of an object on the manifold provided. """
     if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
         return PartialDerivative((1*tensor).to_tensor(),manifold)
@@ -1325,7 +1325,7 @@ def pdiff(tensor,manifold=None):
         return ret
     return 0
 
-def cdiff(tensor,manifold=None):
+def CovariantDerivative(tensor,manifold=None):
     """Computes the covariant derivative, with respect to the metric, on the manifold provided. """
     if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
         return CovariantDerivative((Number(1)*tensor).to_tensor(),manifold)
