@@ -1,4 +1,4 @@
-from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita, solve, Matrix, variations, factorial, Matrix, conjugate, Symbol
+from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita, solve, Matrix, variations, factorial, Matrix, conjugate, Symbol, diff, factor, expand, simplify
 from sympy.physics.units.quantities import Quantity
 from IPython.display import Math
 from sympy.combinatorics import Permutation
@@ -26,7 +26,7 @@ class Manifold():
     Attributes:
         - label(String):                                           Arbitrary name for the manifold, too keep track if there are two similar manifold.
         - dimension(Integer):                                      A whole number, the dimension.
-        - signature(Integer):                                      +1 or -1 depending if the there is 0 or 1 minus in the singaure repsetively.
+        - signature(Integer):                                      +1 or -1 depending if the there is 0 or 1 minus in the signature respectively.
         - coords(List[Symbols]):                                   List of symbols being the coordinates.
         - basis(List[DifferentialForm/DifferentialFormMul]):       List of basis 1-forms that make a basis of the cotangent space.
         - tetrads(List[DifferentialForm/DifferentialFormMul]):     List of tetrad 1-forms for the metric and frame.
@@ -80,7 +80,7 @@ class Manifold():
         self.basis = [DifferentialForm(self,c,0).d for c in coordinates]
         self.vectors = vectorfields(self,coordinates)
     
-    def set_tetrads(self,tetrads) -> None:
+    def set_frame(self,tetrads) -> None:
         """Sets the tetrad variable to a list of 1-forms. Also creates the metric and inverse metric.
         
         Arguments:
@@ -113,8 +113,17 @@ class Manifold():
         """Returns the inverse metric for the Manifold"""
         return self.metric_inv
 
-    def get_christoffel_symbols(self):
+    def get_christoffel_symbols(self,metric=None):
         """ Returns the Christoffel symbols for the metric, calculates the Christoffel symbols for the metric if need be.""" 
+        if metric != None:
+            if isinstance(metric,Tensor) and metric.get_weight() == (-1,-1): pass
+            else: raise NotImplementedError("Arugment: 'metric' must by a tensor of weight (-1,-1).")
+            metric_matrix_inv = Matrix([[Contract(metric*u*v,(0,2),(1,3)) for v in self.vectors] for u in self.vectors]).inv()
+            metric_UU = sum([sum([metric_matrix_inv[i,j]*self.vectors[i]*self.vectors[j] for j in range(self.dimension)]) for i in range(self.dimension)])
+            T_DDD = PartialDerivative(metric)
+            g_UU_T_DDD = (metric_UU*T_DDD)
+            Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
+            return simplify((Gamma_UDD_1 + PermuteIndices(Gamma_UDD_1,(0,2,1)) - Contract(g_UU_T_DDD,(1,2)))/2)
         if self.christoffel_symbols == None:
             T_DDD = PartialDerivative(self.metric)
             g_UU_T_DDD = (self.metric_inv*T_DDD)
@@ -134,7 +143,7 @@ class Manifold():
         return self.selfdual_twoforms
     
     def get_selfdual_connections(self,twoforms):
-        """ Returns the self-dual connection correponding to a triple of self-dual 2-forms. 
+        """ Returns the self-dual connection corresponding to a triple of self-dual 2-forms. 
         
         Arguments:
             - twoforms(List[DifferentialForm]): List of the triple of two forms
@@ -167,7 +176,7 @@ class Manifold():
 
         Arguments:
             - twoform(List[DifferentialFormMul]):  Generic 2-form of which the self-dual matrix will be returned.
-            - selfdual(List[DifferentialFormMul]): Tripple of self-dual 2-forms.
+            - selfdual(List[DifferentialFormMul]): Triple of self-dual 2-forms.
         
         Returns:
             - Matrix of 3x3 components (Can be complex).
@@ -231,7 +240,7 @@ class VectorField():
 
     def __neg__(self):
         """Return the negative of a vector field as a Tensor. """
-        ret = Tensor()
+        ret = Tensor(self.manifold)
         ret.comps_list = [[self]]
         ret.factors = [-1]
         return ret
@@ -298,10 +307,10 @@ class Tensor():
     Attributes:
         - manifold(Manifold): The Manifold that the Tensor is defined on.
         - comps_list(List[VectorField/DifferentialForm]): List of lists that contain either a VectorField or DifferentialForm. Each sub list is a product and the top most list is the addition of the sublists.
-        - factors(List[Integer/Float/Expr]): List of factors that appear infront the product of basis VectorField/DifferentialForm product.
+        - factors(List[Integer/Float/Expr]): List of factors that appear in front the product of basis VectorField/DifferentialForm product.
     """
     def __init__(self, manifold:Manifold):
-        """Returns and empty Tensor that, mostly used as a tempory storage for a new Tensor. 
+        """Returns and empty Tensor that, mostly used as a temporary storage for a new Tensor. 
         
         Arguments:
             - manifold(Manifold): The Manifold the Tensor is defined on.
@@ -540,7 +549,7 @@ class Tensor():
             for i in range(len(self.factors)):
                 ret.factors[i] = ret.factors[i].subs(target,sub)
         
-        if simp: ret = simplify(ret)
+        if simp: ret = ret.simplify()
         return ret
 
     def get_factor(self,index:int):
@@ -558,7 +567,7 @@ class Tensor():
     def simplify(self):
         """ Simplify the factors of a component. """
         ret = Tensor(self.manifold)
-        ret.factors = [f.simplify() for f in self.factors]
+        ret.factors = [simplify(f) for f in self.factors]
         ret.comps_list = self.comps_list.copy()
         ret._collect_comps()
         return ret
@@ -566,7 +575,15 @@ class Tensor():
     def factor(self):
         """Factor the components of a factor. """
         ret = Tensor(self.manifold)
-        ret.factors = [f.factor() for f in self.factors]
+        ret.factors = [factor(f) for f in self.factors]
+        ret.comps_list = self.comps_list.copy()
+        ret._collect_comps()
+        return ret
+    
+    def expand(self,deep=True, modulus=None,**hints):
+        """Expand the components of a tensor. """
+        ret = Tensor(self.manifold)
+        ret.factors = [expand(f,deep=deep,modulus=modulus,**hints) for f in self.factors]
         ret.comps_list = self.comps_list.copy()
         ret._collect_comps()
         return ret
@@ -1298,6 +1315,9 @@ def d(form,manifold=None):
         ret.factors = new_factors_list
         return ret
 
+    elif isinstance(form,(float,int)):
+        return 0
+
     raise NotImplementedError
 
 def PartialDerivative(tensor,manifold=None):
@@ -1320,7 +1340,7 @@ def PartialDerivative(tensor,manifold=None):
         for i in range(man.dimension):
             for j in range(len(tensor.factors)):
                 ret.comps_list += [[man.basis[i]]+tensor.comps_list[j]]
-                ret.factors += [tensor.factors[j].diff(man.coords[i])]
+                ret.factors += [diff(tensor.factors[j],man.coords[i])]
         ret._collect_comps()
         return ret
     return 0
@@ -1341,7 +1361,7 @@ def CovariantDerivative(tensor,manifold=None):
         return ret
     elif isinstance(tensor,Tensor):
         t_weight = tensor.get_weight()
-        Gamma = tensor.manifold.christoffel_symbols
+        Gamma = tensor.manifold.get_christoffel_symbols()
         Gamma_tensor = Gamma*tensor
         CD_tensor = PartialDerivative(tensor)
         for i in range(len(t_weight)):
