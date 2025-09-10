@@ -3,6 +3,7 @@ from sympy.physics.units.quantities import Quantity
 from IPython.display import Math
 from sympy.combinatorics import Permutation
 from itertools import permutations
+from copy import deepcopy
 import re
 import numbers
 from math import factorial, prod
@@ -80,7 +81,7 @@ class Manifold():
         self.basis = [DifferentialForm(self,c,0).d for c in coordinates]
         self.vectors = vectorfields(self,coordinates)
     
-    def set_frame(self,tetrads) -> None:
+    def set_frame(self,tetrads,compute_metric=True) -> None:
         """Sets the tetrad variable to a list of 1-forms. Also creates the metric and inverse metric.
         
         Arguments:
@@ -91,11 +92,11 @@ class Manifold():
         tetrads_D = [e.to_tensor() for e in tetrads]
         self.metric = self.signature*tetrads_D[0]*tetrads_D[0] + sum([tetrads_D[i]*tetrads_D[i] for i in range(1,self.dimension)])
 
-        tetrad_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in tetrads])
-        tetrad_matrix_inv = tetrad_matrix.inv().T
-
-        self.tetrads_inv = [sum([tetrad_matrix_inv[I,u]*self.vectors[u] for u in range(self.dimension)]) for I in range(self.dimension)]
-        self.metric_inv = self.signature*self.tetrads_inv[0]*self.tetrads_inv[0] + sum([self.tetrads_inv[i]*self.tetrads_inv[i] for i in range(1,self.dimension)])
+        if compute_metric:
+            tetrad_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in tetrads])
+            tetrad_matrix_inv = tetrad_matrix.inv().T
+            self.tetrads_inv = [sum([tetrad_matrix_inv[I,u]*self.vectors[u] for u in range(self.dimension)]) for I in range(self.dimension)]
+            self.metric_inv = self.signature*self.tetrads_inv[0]*self.tetrads_inv[0] + sum([self.tetrads_inv[i]*self.tetrads_inv[i] for i in range(1,self.dimension)])
 
     def get_basis(self):
         """ Returns the Manifold 1-forms basis."""
@@ -139,10 +140,10 @@ class Manifold():
         """
         assert(len(self.tetrads)==4)
         sigma = 1 if self.signature == 1 else I
-        self.selfdual_twoforms = [sigma*self.tetrads[0]*self.tetrads[i+1]-orientation/Number(2)*sum([LeviCivita(i,j,k)*self.tetrads[j+1]*self.tetrads[k+1] for j,k in drange(3,2)]) for i in range(3)]
+        self.selfdual_twoforms = [self.tetrads[0]*self.tetrads[i+1]*sigma-sum([int(LeviCivita(i,j,k))*self.tetrads[j+1]*self.tetrads[k+1] for j,k in drange(3,2)])*orientation/Number(2) for i in range(3)]
         return self.selfdual_twoforms
     
-    def get_selfdual_connections(self,twoforms):
+    def get_selfdual_connections(self,twoforms,dsubs=None,basis=None):
         """ Returns the self-dual connection corresponding to a triple of self-dual 2-forms. 
         
         Arguments:
@@ -152,9 +153,13 @@ class Manifold():
             - List of self-dual connections as 3 DifferentialFormMul
         """
         if self.basis == None: raise NotImplementedError("Basis unknown, set Manifold basis or pass basis as argument")
-        A_symbols = symbols(r"A^{1:4}_{0:4}",real=True)
-        Ai = [sum([A_symbols[(i)*4 + I]*self.basis[I] for I in range(4)]) for i in range(3)]
-        dASi = [(d(twoforms[i]) + sum([LeviCivita(i,j,k)*Ai[j]*twoforms[k] for j,k in drange(3,2)])).simplify() for i in range(3)]
+        A_symbols = symbols(r"A^{1:4}_{0:4}",complex=True)
+        if basis == None:
+            basis = self.basis[:]
+        Ai = [sum([A_symbols[(i)*4 + I]*basis[I] for I in range(4)]) for i in range(3)]
+        dASi = [(d(twoforms[i]) + sum([int(LeviCivita(i,j,k))*Ai[j]*twoforms[k] for j,k in drange(3,2)])).simplify() for i in range(3)]
+        if dsubs != None:
+            dASi = [s.subs(dsubs).simplify() for s in dASi]
         A_solution = solve([f for ds in dASi for f in ds.factors],A_symbols)
         Ai = [A.subs(A_solution) for A in Ai]
         return Ai
@@ -169,7 +174,7 @@ class Manifold():
             - List of 2-forms
 
         """
-        return [d(connections[i]) + Number(1,2)*sum([LeviCivita(i,j,k)*connections[j]*connections[k] for j,k in drange(3,2)]) for i in range(3)]
+        return [d(connections[i]) + sum([int(LeviCivita(i,j,k))*connections[j]*connections[k] for j,k in drange(3,2)])*Number(1,2) for i in range(3)]
 
     def get_selfdual_component_vector(self,twoform,selfdual):
         """Returns a 3 vector of self-dual components given a general 2-form
@@ -195,9 +200,33 @@ class Manifold():
             - Scalar (numpy expression) that is the determinant.
         """
         assert(self.vectors != None)
-        assert(self.metric != None)
-        return Matrix([[Contract(self.metric*u*v,(0,2),(1,3)) for v in self.vectors] for u in self.vectors]).det()
+        assert(self.tetrads != None)
+        detg = 1
+        for e in self.tetrads:
+            detg = detg*e
         
+        return -detg.get_factor(0)**2
+
+    def get_urbantke_metric(self,twoforms):
+        S_i = S1,S2,S3 = twoforms
+        S_iDD = [s.to_tensor() for s in S_i]
+        assert(self.dimension == 4)
+
+        sqrtdetg = simplify(sum([s*s for s in S_i]).get_factor(0))
+
+        if sqrtdetg == 0: return 0
+
+        Epsilon4D = sum([LeviCivita(u,v,r,s)*self.vectors[u]*self.vectors[v]*self.vectors[r]*self.vectors[s] for u,v,r,s in drange(4,4)])
+
+        tS_iUU = [Contract(Epsilon4D*s_iDD,(2,4),(3,5))*Number(1,2) for s_iDD in S_iDD]
+
+        f = 1 if self.signature == 1 else I
+        g_DD = sum([Contract(S_iDD[i]*tS_iUU[k]*S_iDD[j],(1,2),(3,4))*LeviCivita(i,j,k) for i,j,k in drange(3,3)])
+        return 8*g_DD/sqrtdetg
+        
+
+
+
 class VectorField():
     """Class VectorField
 
@@ -388,7 +417,7 @@ class Tensor():
 
     def __truediv__(self,other): 
         """True divide the tensor by a Scalar. """
-        return TensorProduct(self,1/Number(other))
+        return TensorProduct(self,1/other)
 
     def __getitem__(self,indices):
         """Overloads the indexing operation to swap the order of the Tensor components.
@@ -592,8 +621,8 @@ class Tensor():
         """ Project a Tensor that is purely built from DifferentialForm's to a true DifferentialForm built with the WedgeProduct. """
         if set(self.get_weight()) != set([-1]): raise TypeError("Tensor cannot be projected to a differential form")
         ret = DifferentialFormMul(self.manifold)
-        ret.factors = self.factors.copy()
-        ret.forms_list = self.comps_list.copy()
+        ret.factors = deepcopy(self.factors)
+        ret.forms_list = deepcopy(self.comps_list)
 
         ret.remove_squares()
         ret.remove_above_top()
@@ -787,7 +816,7 @@ class DifferentialForm():
         if self.exact: return DifferentialForm(self.manifold,Number(0),self.degree+1,exact=True)
         elif isinstance(self.symbol,Number): return DifferentialForm(self.manifold,Number(0),self.degree+1,exact=True)
         else:
-            dsymbol = symbols(r"d\left("+str(self.symbol)+r"\right)")
+            dsymbol = symbols(r"d\left("+str(self.symbol)+r"\right)",**self.symbol.assumptions0)
             return DifferentialForm(self.manifold,dsymbol,degree=self.degree+1,exact=True)
         raise NotImplementedError
 
@@ -841,10 +870,9 @@ class DifferentialFormMul():
         Returns:
             Empty or 1 term DifferentialForm.
          """
-        self.__sympy__ = True
         if form == None:
             self.forms_list = []
-            self.factors = []
+            self.factors = []  
         else:
             self.forms_list = [[form]]
             self.factors = [factor]
@@ -889,6 +917,9 @@ class DifferentialFormMul():
         if isinstance(other,(Tensor,VectorField)):
             return TensorProduct(other,self)
         return WedgeProduct(other,self)
+
+    def is_Rational(self): return False
+    def is_zero(self): return False
 
     def __div__(self,other): return WedgeProduct(self,(1/other))
     def __truediv__(self,other): return WedgeProduct(self,(1/other))
@@ -1083,8 +1114,8 @@ class DifferentialFormMul():
     def subs(self,target,sub=None):
         """Substitute factors or 1 term differential forms in a generic differential form. """
         ret = DifferentialFormMul(self.manifold)
-        ret.factors = self.factors
-        ret.forms_list = self.forms_list
+        ret.factors = deepcopy(self.factors)
+        ret.forms_list = deepcopy(self.forms_list)
 
         if isinstance(target,DifferentialForm):
             new_forms_list = []
@@ -1553,8 +1584,8 @@ def Contract(tensor,*positions):
             ret.comps_list += [total_without]
             ret.factors += [tensor.factors[i]*sign]
     ret._collect_comps()
-    if ret.comps_list ==[[]]: return ret.factors[0]
-    if ret.comps_list == []: return Number(0)
+    # if ret.comps_list ==[[]]: return ret.factors[0]
+    # if ret.comps_list == []: return Number(0)
     return ret
 
 def PermuteIndices(tensor,new_order):
