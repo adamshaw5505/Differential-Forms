@@ -5,3 +5,5 @@ diffform/__pycache__/*
 diffforms/tests/*
 /build/
 build/lib/diffforms/core.py
+/dist/
+BUILD.md

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools","sympy","IPython"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diffforms"
+version = "0.1.01"
+authors = [{name = "Adam Shaw"}]
+description = """ A symbolic differential form library with exterior calculus operations and sympy integration. Applications involve General Relativity and differentialform descriptions of Manifolds."""
+keywords = ["differential forms", "sympy", "polyforms", "exterior derivative"]
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python=">=3.13"
+
+[project.urls]
+Homepage = "https://pypi.org/project/diffforms/"
+Repository = "https://github.com/adamshaw5505/Differential-Forms"
