@@ -1,13 +1,17 @@
 Metadata-Version: 2.4
 Name: diffforms
-Version: 0.1.1
+Version: 0.1.30
 Summary:  A symbolic differential form library with exterior calculus operations and sympy integration. Applications involve General Relativity and differentialform descriptions of Manifolds.
 Author: Adam Shaw
-Project-URL: Homepage, https://test.pypi.org/project/diffforms/
+Project-URL: Homepage, https://pypi.org/project/diffforms/
 Project-URL: Repository, https://github.com/adamshaw5505/Differential-Forms
 Keywords: differential forms,sympy,polyforms,exterior derivative
-Requires-Python: >=3.13
+Requires-Python: >=3.12
 Description-Content-Type: text/markdown
+Requires-Dist: wheel>=0.43.0
+Requires-Dist: sympy>=1.12.0
+Requires-Dist: ipython>=8.19.0
+Requires-Dist: numpy>=2.3.5
 
 General
 =======
