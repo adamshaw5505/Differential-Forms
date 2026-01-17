@@ -187,11 +187,10 @@ class Manifold():
         Returns:
             - List of self-dual connections as 3 DifferentialFormMul
         """
-
         star_dS_i = [Hodge(d(si)) for si in twoforms]
         J1_star_dS_i = J1(star_dS_i,twoforms)
         sigma = Number(1) if self.signature == 1 else I
-        return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]).simplify() for i in range(3)]
+        return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
 
     def get_spin_connection(self,frame=None):
         """Computes the spin connection for a given frame in n-dimensions"""
@@ -1805,3 +1804,15 @@ def codA(thetas,A_i,manifold=None):
     hodge_theta = [Hodge(t,manifold) for t in thetas]
     dA_hodge_theta = dA(hodge_theta,A_i,manifold)
     return [Hodge(t,manifold) for t in dA_hodge_theta]
+
+def GetSelfDualTwoForm(frame,orientation=1,signature=1):
+    assert(len(frame)==4)
+
+    sigma = 1 if signature == 1 else I
+    return [frame[0]*frame[i+1]*sigma-sum([int(LeviCivita(i,j,k))*frame[j+1]*frame[k+1] for j,k in drange(3,2)])*orientation/Number(2) for i in range(3)]
+
+def GetSelfDualConnections(twoforms,signature=1):
+    star_dS_i = [Hodge(d(si)) for si in twoforms]
+    J1_star_dS_i = J1(star_dS_i,twoforms)
+    sigma = Number(1) if signature == 1 else I
+    return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]).simplify() for i in range(3)]
