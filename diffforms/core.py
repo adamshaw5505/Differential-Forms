@@ -84,8 +84,6 @@ class Manifold():
         self.coords = coordinates
         self.basis = [DifferentialForm(self,c,0).d for c in coordinates]
         self.vectors = vectorfields(self,coordinates)
-
-        self.epsilon_tensor = self.signature*sum([LeviCivita(*indices)*prod([self.vectors[i] for i in indices]) for indices in drange(self.dimension,self.dimension)])
     
     def set_frame(self,tetrads,compute_metric=True) -> None:
         """Sets the tetrad variable to a list of 1-forms. Also creates the metric and inverse metric.
@@ -165,6 +163,8 @@ class Manifold():
 
     def get_levi_civita_symbol(self):
         """Return totally antisymmetric tensor"""
+        if self.epsilon_tensor == None:
+            self.epsilon_tensor = self.signature*sum([LeviCivita(*indices)*prod([self.vectors[i] for i in indices]) for indices in drange(self.dimension,self.dimension)])
         return self.epsilon_tensor
 
     def get_selfdual_twoforms(self,orientation:int=1):
