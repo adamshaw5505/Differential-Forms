@@ -202,8 +202,8 @@ class Manifold():
         """
         star_dS_i = [Hodge(d(si)) for si in twoforms]
         J1_star_dS_i = J1(star_dS_i,twoforms)
-        sigma = Number(1) if self.signature == 1 else I
-        return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
+        sigma = -Number(1) if self.signature == 1 else I
+        return [orientation*sigma/Number(6)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
 
     def get_spin_connection(self,frame=None):
         """Computes the spin connection for a given frame in n-dimensions"""
@@ -1771,11 +1771,12 @@ def FormsListInBasisMatrix(formslist:dict, basis=None) -> Matrix:
 
     return return_matrix
     
-def Hodge(form : DifferentialFormMul,M=None) -> DifferentialFormMul:
+def Hodge(form : DifferentialFormMul,M=None,orientation=1) -> DifferentialFormMul:
     """Computes the hodge star of a differntial form given the corresponding manifold has a metric and basis 1-forms defined. """
     if not isinstance(form,(DifferentialForm,DifferentialFormMul)):
         if M == None: raise(TypeError("Manfold must be specified for Hodge Dual of a Scalar"))
-        return form*M.get_volume_form()
+        signature = M.signature
+        return -orientation*signature*form*M.get_volume_form()
     
     if form.manifold.coords == None:
         raise(NotImplementedError("Coordinate free Hodge star operator not implemeneted yet"))
@@ -1784,13 +1785,6 @@ def Hodge(form : DifferentialFormMul,M=None) -> DifferentialFormMul:
     new_degree = dim-degree
     signature = form.manifold.signature
 
-    # if degree == dim:
-    #     factor = form
-    #     for v in form.manifold.vectors:
-    #         factor = factor.insert(v)
-    #     return form.manifold.signature*factor/form.manifold.get_volume()
-
-
     # Fast differential form calculation
     g_UU = form.manifold.get_inverse_metric()
     ret = None
@@ -1798,27 +1792,14 @@ def Hodge(form : DifferentialFormMul,M=None) -> DifferentialFormMul:
         term = form.forms_list[I]
         fact = form.factors[I]
         insert_vectors = [Contract(g_UU*p.to_tensor(),(1,2)) for p in term]
-        ret_term = signature*fact*form.manifold.get_volume_form()
-        for v in insert_vectors[::-1]:
+        ret_term = -orientation*signature*fact*form.manifold.get_volume_form()
+        for v in insert_vectors:
             ret_term = ret_term.insert(v)
         if ret == None:
             ret = ret_term
         else:
             ret = ret + ret_term
     return ret
-
-    # # Slow LeviCivita Computation
-    # EpsilonTensor = form.manifold.get_levi_civita_symbol()
-    # sqrtdetg = form.manifold.get_volume()
-
-    # contractions = [(i,dim+i) for i in range(degree)]
-    
-    # dual = Contract(EpsilonTensor*form.to_tensor(),*contractions)
-
-    # for i in range(new_degree):
-    #     dual = Contract((-1)**i*form.manifold.get_metric()*dual,(1,2+i))
-    
-    # return dual.to_differentialform()/(sqrtdetg*factorial(new_degree))
 
 # SU(2)/SL(2,C) functions
 
