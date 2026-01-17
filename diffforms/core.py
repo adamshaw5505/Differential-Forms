@@ -60,7 +60,8 @@ class Manifold():
         self.christoffel_symbols = None
         self.riemann_curvature = None
         self.epsilon_tensor = None
-        self.volime = None
+        self.volume = None
+        self.volume_form = None
     
     def __eq__(self,other):
         """Equates Manifolds by their label, dimension and signature."""
@@ -99,7 +100,10 @@ class Manifold():
         self.christoffel_symbols = None
 
         if self.vectors is not None:
-            self.volume = factorial(self.dimension)*Contract(prod(tetrads).to_tensor()*prod(self.vectors),*[(i,self.dimension+i) for i in range(self.dimension)])
+            volume = prod(tetrads)
+            for v in self.vectors:
+                volume = volume.insert(v)
+            self.volume = volume
 
         if compute_metric:
             tetrad_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in tetrads])
@@ -118,6 +122,12 @@ class Manifold():
     def get_volume(self):
         """Return volume element"""
         return self.volume
+
+    def get_volume_form(self):
+        """ Computes and returns the volume form """
+        if self.volume_form == None:
+            self.volume_form = prod(self.tetrads)
+        return self.volume_form
 
     def get_basis(self):
         """ Returns the Manifold 1-forms basis."""
@@ -164,7 +174,10 @@ class Manifold():
     def get_levi_civita_symbol(self):
         """Return totally antisymmetric tensor"""
         if self.epsilon_tensor == None:
-            self.epsilon_tensor = self.signature*sum([LeviCivita(*indices)*prod([self.vectors[i] for i in indices]) for indices in drange(self.dimension,self.dimension)])
+            self.epsilon_tensor = Tensor(self)
+            for indices in permutations(list(range(self.dimension))):
+                self.epsilon_tensor.comps_list.append([self.vectors[i] for i in indices])
+                self.epsilon_tensor.factors.append(LeviCivita(*indices))
         return self.epsilon_tensor
 
     def get_selfdual_twoforms(self,orientation:int=1):
@@ -239,8 +252,8 @@ class Manifold():
             - Matrix of 3x3 components (Can be complex).
         """
         
-        assert(twoform.degree == 2)
-        assert([s.degree for s in selfdual] == [2, 2, 2])
+        assert(twoform.get_degree() == 2)
+        assert([s.get_degree() for s in selfdual] == [2, 2, 2])
 
         volSD = sum([s*s for s in selfdual]).get_factor(0)/(1 if selfdual[0].manifold.signature == 1 else I)
         return [(twoform*s).get_factor(0)/(2*volSD) for s in twoforms]
@@ -680,7 +693,7 @@ class Tensor():
         if ret.factors == [] and ret.forms_list == []: 
             return Number(0)
 
-        return ret
+        return ret/Number(factorial(ret.get_degree()))
 
     _sympystr = _repr_latex_
     __repr__  = _repr_latex_
@@ -729,11 +742,11 @@ class DifferentialForm():
     def __eq__(self,other):
         """ Compares if two differential forms are equal. """
         if not isinstance(other,DifferentialForm): return False
-        return (self.symbol == other.symbol) and (self.degree == other.degree)
+        return (self.symbol == other.symbol) and (self.get_degree() == other.get_degree())
     
     def __hash__(self): 
         """ Unique hash for a differential form. """
-        return hash((str(self.symbol),self.degree))
+        return hash((str(self.symbol),self.get_degree()))
 
     def __mul__(self,other): 
         """ Multiplies the DifferentialForm with a Tensor/VectorField to produce a Tensor, or another DifferentialForm to produce a DifferentialFormMul. """
@@ -787,7 +800,7 @@ class DifferentialForm():
         elif str(self.symbol) > str(other.symbol):
             return False
         else:
-            return (self.degree) < other.degree
+            return (self.get_degree()) < other.get_degree()
 
     def __neg__(self):
         """Return the negative of a Differential Form. """
@@ -811,7 +824,7 @@ class DifferentialForm():
 
     def __hash__(self):
         """Unique hash for a DifferentialForm. """
-        return hash((self.symbol,self.degree))
+        return hash((self.symbol,self.get_degree()))
 
     def to_tensor(self):
         """Converts a DifferentialForm to a Tensor, such that multiplication uses the TensorProduct instead of WedgeProduct. """
@@ -824,7 +837,7 @@ class DifferentialForm():
     def __eq__(self,other):
         """Tests if two DifferentialForms are equivalent. """
         if isinstance(other,DifferentialForm):
-            return str(self.symbol) == str(other.symbol) and self.degree == other.degree
+            return str(self.symbol) == str(other.symbol) and self.get_degree() == other.get_degree()
         return False
 
     def _eval_simplify(self, **kwargs):
@@ -865,7 +878,7 @@ class DifferentialForm():
         elif isinstance(self.symbol,Number): return 0
         else:
             dsymbol = symbols(r"d\left("+str(self.symbol)+r"\right)",**self.symbol.assumptions0)
-            return DifferentialForm(self.manifold,dsymbol,degree=self.degree+1,exact=True)
+            return DifferentialForm(self.manifold,dsymbol,degree=self.get_degree()+1,exact=True)
         raise NotImplementedError
 
     def subs(self,target,sub=None):
@@ -883,22 +896,22 @@ class DifferentialForm():
             if len(target.factors) == 1 and target.forms_list == [[self]]:
                 return sub/target.factors[0]
         elif isinstance(target,dict):
-            ret = DifferentialForm(self.symbol,self.degree)
+            ret = DifferentialForm(self.symbol,self.get_degree())
             ret.exact = self.exact
             for t in target:
                 ret = ret.subs(t,target[t])
             return ret
         else:
-            ret = DifferentialForm(self.symbol,self.degree)
+            ret = DifferentialForm(self.symbol,self.get_degree())
             ret.exact = self.exact
             return ret
 
     def conjugate(self):
         """Return the complex conjugate of a DifferentialForm. """
-        return DifferentialForm(self.manifold,conjugate(self.symbol),self.degree,self.exact)
+        return DifferentialForm(self.manifold,conjugate(self.symbol),self.get_degree(),self.exact)
 
     def get_degree(self): 
-        return 1
+        return self.degree
 
 class DifferentialFormMul():
     """ Class: DifferentialFormMul
@@ -988,7 +1001,7 @@ class DifferentialFormMul():
     def __eq__(self,other):
         """Checks if two differential forms are equivalent. """
         if isinstance(other,DifferentialForm) and self.factors == [1] and len(self.forms_list[0]) == 1: return other == self.forms_list[0][0]
-        elif not isinstance(other,DifferentialFormMul): raise NotImplementedError
+        elif not isinstance(other,DifferentialFormMul): return False
         elif other.factors != self.factors: return False
         elif other.forms_list != self.forms_list: return False
         return True
@@ -1011,7 +1024,7 @@ class DifferentialFormMul():
                         ret.forms_list += [self.forms_list[i][:j] + self.forms_list[i][j+1:]]
                         ret.factors += [self.factors[i]*sign]
                         break
-                    sign *= (-1)**self.forms_list[i][j].degree 
+                    sign *= (-1)**self.forms_list[i][j].get_degree() 
         elif isinstance(other,Tensor) and other.is_vectorfield():
             ret = sum([other.factors[i]*self.insert(other.comps_list[i][0]) for i in range(len(other.factors))])
             return ret
@@ -1034,7 +1047,7 @@ class DifferentialFormMul():
             deled = False
             for j in range(len(self.forms_list[i])):
                 f = self.forms_list[i][j]
-                if f.degree%2 == 1 and self.forms_list[i].count(f) > 1:
+                if f.get_degree()%2 == 1 and self.forms_list[i].count(f) > 1:
                     del self.forms_list[i]
                     del self.factors[i]
                     deled = True
@@ -1045,7 +1058,7 @@ class DifferentialFormMul():
         """Removes any differential form with degree above the top form. """
         i = 0
         while i < len(self.forms_list):
-            if sum([f.degree for f in self.forms_list[i]]) > self.manifold.dimension:
+            if sum([f.get_degree() for f in self.forms_list[i]]) > self.manifold.dimension:
                 del self.forms_list[i]
                 del self.factors[i]
                 continue
@@ -1061,7 +1074,7 @@ class DifferentialFormMul():
                         temp = self.forms_list[i][j]
                         self.forms_list[i][j] = self.forms_list[i][k]
                         self.forms_list[i][k] = temp
-                        bubble_factor *= (-1)**(self.forms_list[i][j].degree*self.forms_list[i][k].degree)
+                        bubble_factor *= (-1)**(self.forms_list[i][j].get_degree()*self.forms_list[i][k].get_degree())
             self.factors[i] = self.factors[i]*bubble_factor
     
     def collect_forms(self):
@@ -1113,6 +1126,12 @@ class DifferentialFormMul():
         if len(self.factors) == 0: return 0
         return self.factors[index]
 
+    def get_degree(self):
+        degree_set = set([sum([ssl.get_degree() for ssl in sl]) for sl in self.forms_list])
+        if len(degree_set) == 1:
+            return list(degree_set)[0]
+        return None
+
     def __getitem__(self,index):
         #TODO: Make this permute the differential forms not index the components
         pass
@@ -1142,7 +1161,7 @@ class DifferentialFormMul():
                         new_forms_list += [[DifferentialForm(self.manifold,f,0).d] + self.forms_list[i]]
                         new_factors_list += [dfact]
             for j in range(len(self.forms_list[i])):
-                d_factor = (-1)**sum([0] + [f.degree for f in self.forms_list[i][0:j]])
+                d_factor = (-1)**sum([0] + [f.get_degree() for f in self.forms_list[i][0:j]])
                 dform = self.forms_list[i][j].d
                 if dform == 0: continue
                 new_forms_list += [self.forms_list[i][0:j] + [dform] + self.forms_list[i][j+1:]]
@@ -1264,11 +1283,11 @@ class DifferentialFormMul():
                 parity = int(Permutation(perm).is_odd)
                 ret.comps_list += [[self.forms_list[i][p] for p in perm]]
                 ret.factors += [(-1)**(parity)*self.factors[i]/factorial(L)]
-        return ret
+        return factorial(self.get_degree())*ret
 
     def get_degree(self):
         """Returns the degree of a differential form. """
-        weights = [sum(map(lambda x: x.degree,f)) for f in self.forms_list]
+        weights = [sum(map(lambda x: x.get_degree(),f)) for f in self.forms_list]
         if len(set(weights)) == 1:
             return weights[0]
         return None
@@ -1756,25 +1775,50 @@ def Hodge(form : DifferentialFormMul,M=None) -> DifferentialFormMul:
     """Computes the hodge star of a differntial form given the corresponding manifold has a metric and basis 1-forms defined. """
     if not isinstance(form,(DifferentialForm,DifferentialFormMul)):
         if M == None: raise(TypeError("Manfold must be specified for Hodge Dual of a Scalar"))
-        return form*prod(M.get_frame())
+        return form*M.get_volume_form()
+    
+    if form.manifold.coords == None:
+        raise(NotImplementedError("Coordinate free Hodge star operator not implemeneted yet"))
     degree = form.get_degree()
     dim = form.manifold.dimension
     new_degree = dim-degree
+    signature = form.manifold.signature
 
-    EpsilonTensor = form.manifold.get_levi_civita_symbol()
-    sqrtdetg = form.manifold.get_volume()
+    # if degree == dim:
+    #     factor = form
+    #     for v in form.manifold.vectors:
+    #         factor = factor.insert(v)
+    #     return form.manifold.signature*factor/form.manifold.get_volume()
 
-    contractions = [(i,dim+i) for i in range(degree)]
-    if degree == dim:
-        dual = Contract(EpsilonTensor*form.to_tensor(),*contractions)
-        return dual
 
-    dual = Contract(EpsilonTensor*form.to_tensor(),*contractions)
+    # Fast differential form calculation
+    g_UU = form.manifold.get_inverse_metric()
+    ret = None
+    for I in range(len(form.forms_list)):
+        term = form.forms_list[I]
+        fact = form.factors[I]
+        insert_vectors = [Contract(g_UU*p.to_tensor(),(1,2)) for p in term]
+        ret_term = signature*fact*form.manifold.get_volume_form()
+        for v in insert_vectors[::-1]:
+            ret_term = ret_term.insert(v)
+        if ret == None:
+            ret = ret_term
+        else:
+            ret = ret + ret_term
+    return ret
 
-    for i in range(new_degree):
-        dual = Contract((-1)**i*form.manifold.get_metric()*dual,(1,2+i))
+    # # Slow LeviCivita Computation
+    # EpsilonTensor = form.manifold.get_levi_civita_symbol()
+    # sqrtdetg = form.manifold.get_volume()
+
+    # contractions = [(i,dim+i) for i in range(degree)]
     
-    return dual.to_differentialform()/(sqrtdetg*factorial(new_degree))
+    # dual = Contract(EpsilonTensor*form.to_tensor(),*contractions)
+
+    # for i in range(new_degree):
+    #     dual = Contract((-1)**i*form.manifold.get_metric()*dual,(1,2+i))
+    
+    # return dual.to_differentialform()/(sqrtdetg*factorial(new_degree))
 
 # SU(2)/SL(2,C) functions
 
