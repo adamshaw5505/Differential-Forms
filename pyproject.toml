@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diffforms"
-version = "0.1.30"
+version = "0.1.31"
 authors = [{name = "Adam Shaw"}]
 description = """ A symbolic differential form library with exterior calculus operations and sympy integration. Applications involve General Relativity and differentialform descriptions of Manifolds."""
 keywords = ["differential forms", "sympy", "polyforms", "exterior derivative"]

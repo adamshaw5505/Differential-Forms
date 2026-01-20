@@ -203,7 +203,7 @@ class Manifold():
         star_dS_i = [Hodge(d(si)) for si in twoforms]
         J1_star_dS_i = J1(star_dS_i,twoforms)
         sigma = -Number(1) if self.signature == 1 else I
-        return [orientation*sigma/Number(6)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
+        return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
 
     def get_spin_connection(self,frame=None):
         """Computes the spin connection for a given frame in n-dimensions"""
@@ -287,7 +287,7 @@ class Manifold():
 
         f = 1 if self.signature == 1 else I
         g_DD = sum([Contract(S_iDD[i]*tS_iUU[k]*S_iDD[j],(1,2),(3,4))*LeviCivita(i,j,k) for i,j,k in drange(3,3)])
-        return 8*g_DD/sqrtdetg
+        return g_DD/sqrtdetg
         
 class VectorField():
     """Class VectorField
@@ -1801,12 +1801,10 @@ def Hodge(form : DifferentialFormMul,M=None,orientation=1) -> DifferentialFormMu
             ret = ret + ret_term
     return ret
 
-# SU(2)/SL(2,C) functions
-
 def J1(thetas,twoforms):
     """Computes the J1 operator on R3 valued 1-forms in 4D given a triple of 2-forms"""
     g_UU = twoforms[0].manifold.get_inverse_metric()
-    S_iDU = [2*Contract(s.to_tensor()*g_UU,(1,2)).simplify() for s in twoforms]
+    S_iDU = [Contract(s.to_tensor()*g_UU,(1,2)).simplify() for s in twoforms]
     return [sum([LeviCivita(i,j,k)*Contract(S_iDU[j]*thetas[k].to_tensor(),(1,2)) for j,k in drange(3,2)]).to_differentialform() for i in range(3)]
 
 def J2(Bi,twoforms):
@@ -1814,7 +1812,7 @@ def J2(Bi,twoforms):
     ### TODO: Simplify this and compact the notation
     Bi_DD = [2*b.to_tensor() for b in Bi]
     g_UU = twoforms[0].manifold.get_inverse_metric()
-    Si_DU = [Contract(2*s.to_tensor()*g_UU,(1,2)) for s in twoforms]
+    Si_DU = [Contract(s.to_tensor()*g_UU,(1,2)) for s in twoforms]
     R1_DD = Contract(S2_DU*B3_DD - S3_DU*B2_DD,(1,2))
     R2_DD = Contract(S3_DU*B1_DD - S1_DU*B3_DD,(1,2))
     R3_DD = Contract(S1_DU*B2_DD - S2_DU*B1_DD,(1,2))

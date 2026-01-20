@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: diffforms
-Version: 0.1.30
+Version: 0.1.31
 Summary:  A symbolic differential form library with exterior calculus operations and sympy integration. Applications involve General Relativity and differentialform descriptions of Manifolds.
 Author: Adam Shaw
 Project-URL: Homepage, https://pypi.org/project/diffforms/
@@ -15,11 +15,11 @@ Requires-Dist: numpy>=2.3.5
 
 General
 =======
-The Diffform python package implements differential forms and poly-forms from differential geometry. It includes some of the usual operations found in exterior calculus, include exterior product, differential operator. The main advatage of this package over other differential form packages ( e.g. [pycartan](https://github.com/TUD-RST/pycartan) ) is that it allows for polyforms and there is no dependence on basis forms.
+The Diffform python package implements differential forms and poly-forms from differential geometry. It includes some usual operations found in exterior calculus, include exterior product, differential operator. The main advantage of this package over other differential form packages ( e.g. [pycartan](https://github.com/TUD-RST/pycartan) ) is that it allows for polyforms and there is no dependence on basis forms.
 
-This package is a part-time project during my PhD so updates should be suspected to end eventually. Bugs and mistakes may (possibly will) be prevalent.
+This package is a part-time project during my PhD, updates should be suspected to end eventually. Bugs and mistakes may (possibly will) be prevalent.
 
-Documentation will be implemented when I find the time, when I have time I will try to implement comments in the class/functions as a rudamentary form of documentation.
+Documentation will be implemented when I find the time, when I have time I will try to implement comments in the class/functions as a rudimentary form of documentation.
 
 ToDo List
 =========
@@ -34,9 +34,10 @@ This is the list of possible implementation, in an approximate order of priority
 - [X] Generic tensor product
 - [X] Insertion of vector fields
 - [X] Generic Tensor Contractions
-- [-] Implement substitution for Tensors
-- [ ] Hodge star given metric/frame (In Progress)
-- [ ] Fallback to symbolic Hodge star without basis   (or if form isn't in basis)
+- [X] Implement substitution for Tensors
+- [-] Hodge star given metric/frame (In Progress)
+- [ ] Separate 
+- [ ] Fallback to symbolic Hodge star without basis (or if form isn't in basis)
 - [ ] Solving 1-form simple linear equations
 - [ ] Vector Field Commutator
 
