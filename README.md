@@ -20,8 +20,8 @@ This is the list of possible implementation, in an approximate order of priority
 - [X] Insertion of vector fields
 - [X] Generic Tensor Contractions
 - [X] Implement substitution for Tensors
-- [-] Hodge star given metric/frame (In Progress)
-- [ ] Separate 
+- [X] Hodge star given metric/frame (Working?)
+- [ ] Spin connection computation
 - [ ] Fallback to symbolic Hodge star without basis (or if form isn't in basis)
 - [ ] Solving 1-form simple linear equations
 - [ ] Vector Field Commutator

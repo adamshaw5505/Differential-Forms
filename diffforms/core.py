@@ -1,4 +1,4 @@
-from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita, solve, Matrix, variations, factorial, Matrix, conjugate, Symbol, diff, factor, expand, simplify, Array, eye
+from sympy import Symbol, I, Integer, AtomicExpr, Rational, latex, Number, Expr, symbols, simplify, Function, LeviCivita, solve, Matrix, variations, factorial, Matrix, conjugate, Symbol, diff, factor, expand, simplify, Array, eye, flatten
 from sympy.physics.units.quantities import Quantity
 from IPython.display import Math
 from sympy.combinatorics import Permutation
@@ -32,7 +32,7 @@ class Manifold():
         - coords(List[Symbols]):                                   List of symbols being the coordinates.
         - basis(List[DifferentialForm/DifferentialFormMul]):       List of basis 1-forms that make a basis of the cotangent space.
         - tetrads(List[DifferentialForm/DifferentialFormMul]):     List of tetrad 1-forms for the metric and frame.
-        - tetrads_inv(List[DifferentialForm/DifferentialFormMul]): Inverse tetrads as a list of VectorFields.
+        - frame_inv(List[DifferentialForm/DifferentialFormMul]): Inverse tetrads as a list of VectorFields.
         - metric(Tensor):                                          The metric on the manifold
         - metric_inv(Tensor):                                      Inverse of the metric
         - vectors(List[Tensor,VectorField]):                       List of Vectors/VectorFields that form a basis of the tangent space.
@@ -52,13 +52,15 @@ class Manifold():
         self.signature = signature
         self.coords = None
         self.basis = None
-        self.tetrads = None
-        self.tetrads_inv = None
+        self.frame = None
+        self.frame_inv = None
         self.metric = None
         self.metric_inv = None
         self.vectors = None
         self.christoffel_symbols = None
+        self.spin_connection = None
         self.riemann_curvature = None
+        self.spin_riemann = None
         self.epsilon_tensor = None
         self.volume = None
         self.volume_form = None
@@ -86,38 +88,43 @@ class Manifold():
         self.basis = [DifferentialForm(self,c,0).d for c in coordinates]
         self.vectors = vectorfields(self,coordinates)
     
-    def set_frame(self,tetrads,compute_metric=True) -> None:
+    def set_frame(self,frame,compute_metric=True) -> None:
         """Sets the tetrad variable to a list of 1-forms. Also creates the metric and inverse metric.
         
         Arguments:
-            - tetrads(List[DifferentialForm/DifferentialFormMul]): List of 1-forms
+            - frame(List[DifferentialForm/DifferentialFormMul]): List of 1-forms
         """
-        self.tetrads = tetrads
+        self.frame = frame
 
-        tetrads_D = [e.to_tensor() for e in tetrads]
-        self.metric = self.signature*tetrads_D[0]*tetrads_D[0] + sum([tetrads_D[i]*tetrads_D[i] for i in range(1,self.dimension)])
+        frame_D = [e.to_tensor() for e in frame]
+        self.metric = self.signature*frame_D[0]*frame_D[0] + sum([frame_D[i]*frame_D[i] for i in range(1,self.dimension)])
 
         self.christoffel_symbols = None
 
         if self.vectors is not None:
-            volume = prod(tetrads)
+            volume = prod(frame)
             for v in self.vectors:
                 volume = volume.insert(v)
             self.volume = volume
 
         if compute_metric:
-            tetrad_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in tetrads])
-            tetrad_matrix_inv = tetrad_matrix.inv().T
-            self.tetrads_inv = [sum([tetrad_matrix_inv[I,u]*self.vectors[u] for u in range(self.dimension)]) for I in range(self.dimension)]
-            self.metric_inv = self.signature*self.tetrads_inv[0]*self.tetrads_inv[0] + sum([self.tetrads_inv[i]*self.tetrads_inv[i] for i in range(1,self.dimension)])
+            self.get_inverse_frame()
+            self.metric_inv = self.signature*self.frame_inv[0]*self.frame_inv[0] + sum([self.frame_inv[i]*self.frame_inv[i] for i in range(1,self.dimension)])
 
     def get_frame(self):
         """Returns the list of frames"""
-        return self.tetrads
+        if self.frame == None: raise(NotImplementedError,"Tetrads need to be provided by the user.")
+        return self.frame
 
     def get_inverse_frame(self):
         """Return the list of inverse frames"""
-        return self.tetrads_inv
+        if self.vectors == None: raise(NotImplemented,"Coordinate Bais must be introduce as of this update")
+
+        if self.frame == None: raise(NotImplemented,"Frame must be supplied by user")
+        frame_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in self.frame])
+        frame_matrix_inv = frame_matrix.inv().T
+        self.frame_inv = [sum([frame_matrix_inv[I,u]*self.vectors[u] for u in range(self.dimension)]) for I in range(self.dimension)]
+        return self.frame_inv
     
     def get_volume(self):
         """Return volume element"""
@@ -126,7 +133,7 @@ class Manifold():
     def get_volume_form(self):
         """ Computes and returns the volume form """
         if self.volume_form == None:
-            self.volume_form = prod(self.tetrads)
+            self.volume_form = prod(self.frame)
         return self.volume_form
 
     def get_basis(self):
@@ -163,14 +170,6 @@ class Manifold():
             self.christoffel_symbols = ((Gamma_UDD_1 + PermuteIndices(Gamma_UDD_1,(0,2,1)) - Contract(g_UU_T_DDD,(1,2)))/Number(2)).simplify()
         return self.christoffel_symbols
 
-    def get_riemann_curvature_tensor(self):
-        if self.riemann_curvature == None:
-            G_UDD = self.get_christoffel_symbols()
-            dG_DUDD = PartialDerivative(G_UDD)
-            R_UDDD = PermuteIndices(dG_DUDD,(1,3,0,2)) + PermuteIndices(Contract(G_UDD*G_UDD,(2,3)),(0,3,1,2))
-            self.riemann_curvature = (R_UDDD - PermuteIndices(R_UDDD,(0,1,3,2))).simplify()
-        return self.riemann_curvature
-
     def get_levi_civita_symbol(self):
         """Return totally antisymmetric tensor"""
         if self.epsilon_tensor == None:
@@ -186,50 +185,82 @@ class Manifold():
         Arguments:
             - orientation(Integer): Changes which self-dual half the 2-forms are calculated in (i.e. anti-self-dual or self-dual).
         """
-        assert(len(self.tetrads)==4)
+        assert(len(self.frame)==4)
         sigma = 1 if self.signature == 1 else I
-        self.selfdual_twoforms = [self.tetrads[0]*self.tetrads[i+1]*sigma-sum([int(LeviCivita(i,j,k))*self.tetrads[j+1]*self.tetrads[k+1] for j,k in drange(3,2)])*orientation/Number(2) for i in range(3)]
+        self.selfdual_twoforms = [self.frame[0]*self.frame[i+1]*sigma-sum([int(LeviCivita(i,j,k))*self.frame[j+1]*self.frame[k+1] for j,k in drange(3,2)])*orientation/Number(2) for i in range(3)]
         return self.selfdual_twoforms
     
-    def get_selfdual_connections(self,twoforms,dsubs=None,basis=None,orientation=1):
+    def get_selfdual_connections(self,twoforms,dsubs=None,orientation=1,method="H"):
         """ Returns the self-dual connection corresponding to a triple of self-dual 2-forms. 
         
         Arguments:
-            - twoforms(List[DifferentialForm]): List of the triple of two forms
-        
+            - twoforms(List[DifferentialForm]):            List of the triple of two forms
+            - dsubs(Dict[SympyExpression,MathsObject,...): Dictionary of/single replacement rule(s)
+            - orientation(Int):                            Orientation of the volume form used for the Hodge star
+            - method(Str):                                 Method used to compute the connection ("H" = Hodge, "LA" = Linear Algebra)
+
         Returns:
             - List of self-dual connections as 3 DifferentialFormMul
         """
-        star_dS_i = [Hodge(d(si)) for si in twoforms]
-        J1_star_dS_i = J1(star_dS_i,twoforms)
-        sigma = -Number(1) if self.signature == 1 else I
-        return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
+        assert(self.dimension==4)
+        if method == "H":
+            star_dS_i = [Hodge(d(si).subs(dsubs)) for si in twoforms]
+            J1_star_dS_i = J1(star_dS_i,twoforms)
+            sigma = -Number(1) if self.signature == 1 else I
+            return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
+        elif method == "LA":
+            A1 = sum([symbols(rf"A^{{1}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
+            A2 = sum([symbols(rf"A^{{2}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
+            A3 = sum([symbols(rf"A^{{3}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
+            S1,S2,S3 = twoforms
 
-    def get_spin_connection(self,frame=None):
+            eoms = ((d(S1).subs(dsubs)+A2*S3-A3*S2).simplify().factors)
+            eoms += ((d(S2).subs(dsubs)+A3*S1-A1*S3).simplify().factors)
+            eoms += ((d(S3).subs(dsubs)+A1*S2-A2*S1).simplify().factors)
+
+            a_sols = solve(eoms,A1.factors+A2.factors+A3.factors)
+
+            return A1.subs(a_sols),A2.subs(a_sols),A3.subs(a_sols)
+        else:
+            raise NotImplementedError("Valid method not chosen")
+
+    def get_spin_connection(self,frame=None,recompute=False):
         """Computes the spin connection for a given frame in n-dimensions"""
+        if not recompute:
+            if self.spin_connection != None: return self.spin_connection
         if frame == None:
-            if self.tetrads == None: raise NotImplementedError("Basis unknown, set Manifold basis or pass basis as argument")
-            frame = self.tetrads[:]
-        wIJ_K_symbols = Array([[[symbols(fr"\omega^{{{I}{J}}}_{{{K}}}") for K in range(self.dimension)] for J in range(self.dimension)] for I in range(self.dimension)])
-        id3 = eye(self.dimension)
-        if self.signature == -1: id3[0,0] = -1
-        wI_J_K_symbols = Array([[[[wIJ_K_symbols[I,L,K]*id3[L,J] for L in range(self.dimension)] for K in range(self.dimension)] for J in range(self.dimension)] for I in range(self.dimension)])
+            if self.frame == None: raise NotImplementedError("Basis unknown, set Manifold basis or pass basis as argument")
+            frame = self.frame[:]
+        wIJ_K_symbols = Array([[[(+1 if I < J else -1)*symbols(fr"\omega^{{{min(I,J)}{max(I,J)}}}_{{{K}}}") if I!=J else 0 for K in range(self.dimension)] for J in range(self.dimension)] for I in range(self.dimension)]) # Get symbols for 
+
+        η = eye(self.dimension)
+        if self.signature == -1: η[0,0] = -1
+        wI_J_K_symbols = Array([[[sum([wIJ_K_symbols[I,L,K]*η[L,J] for L in range(self.dimension)]) for K in range(self.dimension)] for J in range(self.dimension)] for I in range(self.dimension)])
+
         spin_connection = [[sum([wI_J_K_symbols[I,J,K]*self.basis[K] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
-        # The above line doesn't compile, why not?!
-        # conds = [d(frame[I]) + sum([spin_connection[I,J]*self.frame[J] for J in range(self.dimension)]) for I in range(self.dimension)]
 
-        # equations = []
-        # for I in range(self.dimension):
-        #     for comp in conds[I].factors:
-        #         equations.append(comp)
-        # eq_sol = solve(equations, wIJ_K_symbols)
-        # for I,J in drange(spin_connection):
-        #     spin_connection[I,J].subs(eq_sol)
-        # return spin_connection
+        torsion_equations = [d(frame[I]) + sum([spin_connection[I][J]*frame[J] for J in range(self.dimension)]) for I in range(self.dimension)]
+
+        all_symbols = []
+        for I in range(self.dimension):
+            for J in range(I+1,self.dimension):
+                for K in range(self.dimension):
+                    all_symbols.append(wIJ_K_symbols[I,J,K])
+
+        all_equations = []
+        for eq in torsion_equations:
+            for fact in eq.factors:
+                if fact != 0:
+                    all_equations.append(fact)
+
+        spin_comps_sol = solve(all_equations,all_symbols)
+        wI_J_K_symbols = wI_J_K_symbols.subs(spin_comps_sol)
+
+        self.spin_connection = [[sum([wI_J_K_symbols[I,J,K]*self.basis[K] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
+
+        return self.spin_connection
             
-    def get_selfdual_curvatures(self,connections):
-
-
+    def get_selfdual_curvatures(self,connections,dsubs=None):
         """Returns the triple of self-dual curvatures, built from the self-dual connections. They are 2-forms.
 
         Arguments:
@@ -239,7 +270,30 @@ class Manifold():
             - List of 2-forms
 
         """
-        return [d(connections[i],self) + sum([int(LeviCivita(i,j,k))*connections[j]*connections[k] for j,k in drange(3,2)])*Number(1,2) for i in range(3)]
+        return [d(connections[i],self).subs(dsubs) + sum([int(LeviCivita(i,j,k))*connections[j]*connections[k] for j,k in drange(3,2)])*Number(1,2) for i in range(3)]
+
+    def get_spin_curvature(self,spin_connection=None):
+        if spin_connection == None:
+            if self.spin_connection == None:
+                self.get_spin_connection()
+            spin_connection = self.spin_connection
+        
+        if self.spin_riemann != None:
+            return self.spin_riemann
+
+        self.spin_riemann = [[d(spin_connection[I][J]) + sum([spin_connection[I][K]*spin_connection[K][J] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
+
+        return self.spin_riemann
+
+
+    def get_riemann_curvature_tensor(self):
+        """Computes the Riemann Curvature Tensor from the Christofell symbols"""
+        if self.riemann_curvature == None:
+            G_UDD = self.get_christoffel_symbols()
+            dG_DUDD = PartialDerivative(G_UDD)
+            R_UDDD = PermuteIndices(dG_DUDD,(1,3,0,2)) + PermuteIndices(Contract(G_UDD*G_UDD,(2,3)),(0,3,1,2))
+            self.riemann_curvature = (R_UDDD - PermuteIndices(R_UDDD,(0,1,3,2))).simplify()
+        return self.riemann_curvature
 
     def get_selfdual_component_vector(self,twoform,selfdual):
         """Returns a 3 vector of self-dual components given a general 2-form
@@ -265,9 +319,9 @@ class Manifold():
             - Scalar (numpy expression) that is the determinant.
         """
         assert(self.vectors != None)
-        assert(self.tetrads != None)
+        assert(self.frame != None)
         detg = 1
-        for e in self.tetrads:
+        for e in self.frame:
             detg = detg*e
         
         return -detg.get_factor(0)**2
@@ -566,7 +620,7 @@ class Tensor():
         ret._collect_comps()
         return ret
 
-    def subs(self,target,sub=None,simp=True):
+    def subs(self,target,sub=None,simp=False):
         """Substitute function that replaces components or basis elements with any Tensor components. 
         
         Arguments:
@@ -1801,10 +1855,16 @@ def Hodge(form : DifferentialFormMul,M=None,orientation=1) -> DifferentialFormMu
             ret = ret + ret_term
     return ret
 
-def J1(thetas,twoforms):
+def GetSpinCurvature(spin_connection,M):
+    dim = M.dimension
+    return [[d(spin_connection[I][J]) + sum([spin_connection[I][K]*spin_connection[K][J] for K in range(dim)]) for J in range(dim)] for I in range(dim)]
+
+def J1(thetas,twoforms,simplify=False):
     """Computes the J1 operator on R3 valued 1-forms in 4D given a triple of 2-forms"""
     g_UU = twoforms[0].manifold.get_inverse_metric()
     S_iDU = [Contract(s.to_tensor()*g_UU,(1,2)).simplify() for s in twoforms]
+    if simplify:
+        return [sum([LeviCivita(i,j,k)*Contract(S_iDU[j]*thetas[k].to_tensor(),(1,2)) for j,k in drange(3,2)]).to_differentialform().simplify() for i in range(3)]
     return [sum([LeviCivita(i,j,k)*Contract(S_iDU[j]*thetas[k].to_tensor(),(1,2)) for j,k in drange(3,2)]).to_differentialform() for i in range(3)]
 
 def J2(Bi,twoforms):
@@ -1834,8 +1894,8 @@ def GetSelfDualTwoForm(frame,orientation=1,signature=1):
     sigma = 1 if signature == 1 else I
     return [frame[0]*frame[i+1]*sigma-sum([int(LeviCivita(i,j,k))*frame[j+1]*frame[k+1] for j,k in drange(3,2)])*orientation/Number(2) for i in range(3)]
 
-def GetSelfDualConnections(twoforms,signature=1):
+def GetSelfDualConnections(twoforms,signature=1,orientation=1):
     star_dS_i = [Hodge(d(si)) for si in twoforms]
     J1_star_dS_i = J1(star_dS_i,twoforms)
     sigma = Number(1) if signature == 1 else I
-    return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]).simplify() for i in range(3)]
+    return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
