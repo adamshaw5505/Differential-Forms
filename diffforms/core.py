@@ -1787,7 +1787,7 @@ def LieDerivative(vector,tensor):
         return d(tensor.insert(vector),tensor.manifold) + d(tensor).insert(vector)
     elif isinstance(tensor,VectorField):
         return 0
-    elif isinstance(tensor,Tensor):
+    elif isinstance(tensor,Tensor): # %TODO: Fix Lie Derivative 
         LieD_tensor = Contract(vector*PartialDerivative(tensor),(0,1))
         PDvector = PartialDerivative(vector)
         if PDvector == 0: return LieD_tensor

@@ -21,7 +21,8 @@ This is the list of possible implementation, in an approximate order of priority
 - [X] Generic Tensor Contractions
 - [X] Implement substitution for Tensors
 - [X] Hodge star given metric/frame (Working?)
-- [ ] Spin connection computation
+- [X] Spin connection computation
+- [ ] Lie Derivative on generic Tensor (add weight)
 - [ ] Fallback to symbolic Hodge star without basis (or if form isn't in basis)
 - [ ] Solving 1-form simple linear equations
 - [ ] Vector Field Commutator
