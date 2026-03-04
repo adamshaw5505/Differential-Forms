@@ -46,24 +46,30 @@ class Manifold():
             - dimension(Integer): The dimension.
             - signature(Integer): Signature of the manifold.
         """
-        self.label = label
         assert(dimension > 0)
-        self.dimension = dimension
-        self.signature = signature
-        self.coords = None
-        self.basis = None
-        self.frame = None
-        self.frame_inv = None
-        self.metric = None
-        self.metric_inv = None
-        self.vectors = None
+        self.label               = label
+        self.dimension           = dimension
+        self.signature           = signature
+        self.coords              = None
+        self.basis               = None
+        self.frame               = None
+        self.frame_inv           = None
+        self.metric              = None
+        self.metric_inv          = None
+        self.vectors             = None
         self.christoffel_symbols = None
-        self.spin_connection = None
-        self.riemann_curvature = None
-        self.spin_riemann = None
-        self.epsilon_tensor = None
-        self.volume = None
-        self.volume_form = None
+        self.spin_connection     = None
+        self.riemann_curvature   = None
+        self.spin_riemann        = None
+        self.epsilon_tensor      = None
+        self.volume              = None
+        self.volume_form         = None
+
+        """ Special 4 Dimensional Variables """
+
+        self.self_dual_twoforms    = None
+        self.self_dual_connections = None
+        self.self_dual_curvature   = None
     
     def __eq__(self,other):
         """Equates Manifolds by their label, dimension and signature."""
@@ -88,28 +94,29 @@ class Manifold():
         self.basis = [DifferentialForm(self,c,0).d for c in coordinates]
         self.vectors = vectorfields(self,coordinates)
     
-    def set_frame(self,frame,compute_metric=True) -> None:
+    def clear_variables(self):
+        self.metric              = None
+        self.metric_inv          = None
+        self.christoffel_symbols = None
+        self.spin_connection     = None
+        self.riemann_curvature   = None
+        self.spin_riemann        = None
+        self.epsilon_tensor      = None
+        self.volume              = None
+        self.volume_form         = None
+
+        self.self_dual_twoforms    = None
+        self.self_dual_connections = None
+        self.self_dual_curvature   = None
+
+    def set_frame(self,frame) -> None:
         """Sets the tetrad variable to a list of 1-forms. Also creates the metric and inverse metric.
         
         Arguments:
             - frame(List[DifferentialForm/DifferentialFormMul]): List of 1-forms
         """
+        self.clear_variables()
         self.frame = frame
-
-        frame_D = [e.to_tensor() for e in frame]
-        self.metric = self.signature*frame_D[0]*frame_D[0] + sum([frame_D[i]*frame_D[i] for i in range(1,self.dimension)])
-
-        self.christoffel_symbols = None
-
-        if self.vectors is not None:
-            volume = prod(frame)
-            for v in self.vectors:
-                volume = volume.insert(v)
-            self.volume = volume
-
-        if compute_metric:
-            self.get_inverse_frame()
-            self.metric_inv = self.signature*self.frame_inv[0]*self.frame_inv[0] + sum([self.frame_inv[i]*self.frame_inv[i] for i in range(1,self.dimension)])
 
     def get_frame(self):
         """Returns the list of frames"""
@@ -118,16 +125,22 @@ class Manifold():
 
     def get_inverse_frame(self):
         """Return the list of inverse frames"""
-        if self.vectors == None: raise(NotImplemented,"Coordinate Bais must be introduce as of this update")
-
+        if self.vectors == None: raise(NotImplemented,"Coordinate Basis must be introduce")
         if self.frame == None: raise(NotImplemented,"Frame must be supplied by user")
-        frame_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in self.frame])
-        frame_matrix_inv = frame_matrix.inv().T
-        self.frame_inv = [sum([frame_matrix_inv[I,u]*self.vectors[u] for u in range(self.dimension)]) for I in range(self.dimension)]
+        if self.frame_inv == None:
+            frame_matrix = Matrix([[e.insert(v) for v in self.vectors] for e in self.frame])
+            frame_matrix_inv = frame_matrix.inv().T
+            self.frame_inv = [sum([frame_matrix_inv[I,u]*self.vectors[u] for u in range(self.dimension)]) for I in range(self.dimension)]
         return self.frame_inv
     
     def get_volume(self):
         """Return volume element"""
+        if self.volume == None:
+            volume = self.get_volume_form()
+            for v in self.vectors:
+                volume = volume.insert(v)
+            self.volume = volume
+
         return self.volume
 
     def get_volume_form(self):
@@ -146,26 +159,23 @@ class Manifold():
 
     def get_metric(self):
         """Returns the Manifold metric."""
+        if self.metric == None:
+            frame_D = [e.to_tensor() for e in self.get_frame()]
+            self.metric = self.signature*frame_D[0]*frame_D[0] + sum([frame_D[i]*frame_D[i] for i in range(1,self.dimension)])
         return self.metric
     
     def get_inverse_metric(self): 
         """Returns the inverse metric for the Manifold"""
+        if self.metric_inv == None:
+            self.get_inverse_frame()
+            self.metric_inv = self.signature*self.frame_inv[0]*self.frame_inv[0] + sum([self.frame_inv[i]*self.frame_inv[i] for i in range(1,self.dimension)])
         return self.metric_inv
 
-    def get_christoffel_symbols(self,metric=None):
+    def get_christoffel_symbols(self):
         """ Returns the Christoffel symbols for the metric, calculates the Christoffel symbols for the metric if need be.""" 
-        if metric != None:
-            if isinstance(metric,Tensor) and metric.get_weight() == (-1,-1): pass
-            else: raise NotImplementedError("Arugment: 'metric' must by a tensor of weight (-1,-1).")
-            metric_matrix_inv = Matrix([[Contract(metric*u*v,(0,2),(1,3)) for v in self.vectors] for u in self.vectors]).inv()
-            metric_UU = sum([sum([metric_matrix_inv[i,j]*self.vectors[i]*self.vectors[j] for j in range(self.dimension)]) for i in range(self.dimension)])
-            T_DDD = PartialDerivative(metric)
-            g_UU_T_DDD = (metric_UU*T_DDD)
-            Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
-            return simplify((Gamma_UDD_1 + PermuteIndices(Gamma_UDD_1,(0,2,1)) - Contract(g_UU_T_DDD,(1,2)))/Number(2)).simplify()
         if self.christoffel_symbols == None:
-            T_DDD = PartialDerivative(self.metric)
-            g_UU_T_DDD = (self.metric_inv*T_DDD)
+            T_DDD = PartialDerivative(self.get_metric())
+            g_UU_T_DDD = (self.get_inverse_metric()*T_DDD)
             Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
             self.christoffel_symbols = ((Gamma_UDD_1 + PermuteIndices(Gamma_UDD_1,(0,2,1)) - Contract(g_UU_T_DDD,(1,2)))/Number(2)).simplify()
         return self.christoffel_symbols
@@ -179,18 +189,19 @@ class Manifold():
                 self.epsilon_tensor.factors.append(LeviCivita(*indices))
         return self.epsilon_tensor
 
-    def get_selfdual_twoforms(self,orientation:int=1):
+    def get_self_dual_twoforms(self,orientation:int=1):
         """For a 4 dimensional Manifold, return the self-dual 2-forms in a given.
         
         Arguments:
             - orientation(Integer): Changes which self-dual half the 2-forms are calculated in (i.e. anti-self-dual or self-dual).
         """
         assert(len(self.frame)==4)
-        sigma = 1 if self.signature == 1 else I
-        self.selfdual_twoforms = [self.frame[0]*self.frame[i+1]*sigma-sum([int(LeviCivita(i,j,k))*self.frame[j+1]*self.frame[k+1] for j,k in drange(3,2)])*orientation/Number(2) for i in range(3)]
-        return self.selfdual_twoforms
+        if self.self_dual_twoforms == None:
+            sigma = 1 if self.signature == 1 else I
+            self.self_dual_twoforms = [self.frame[0]*self.frame[i+1]*sigma-sum([int(LeviCivita(i,j,k))*self.frame[j+1]*self.frame[k+1] for j,k in drange(3,2)])*orientation/Number(2) for i in range(3)]
+        return self.self_dual_twoforms
     
-    def get_selfdual_connections(self,twoforms,dsubs=None,orientation=1,method="H"):
+    def get_self_dual_connections(self,dsubs=None,orientation=1,method="H"):
         """ Returns the self-dual connection corresponding to a triple of self-dual 2-forms. 
         
         Arguments:
@@ -203,64 +214,64 @@ class Manifold():
             - List of self-dual connections as 3 DifferentialFormMul
         """
         assert(self.dimension==4)
-        if method == "H":
-            star_dS_i = [Hodge(d(si).subs(dsubs)) for si in twoforms]
-            J1_star_dS_i = J1(star_dS_i,twoforms)
-            sigma = -Number(1) if self.signature == 1 else I
-            return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
-        elif method == "LA":
-            A1 = sum([symbols(rf"A^{{1}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
-            A2 = sum([symbols(rf"A^{{2}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
-            A3 = sum([symbols(rf"A^{{3}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
-            S1,S2,S3 = twoforms
+        if self.self_dual_connections == None:
+            twoforms = self.get_self_dual_twoforms(orientation)
+            if method == "H":
+                star_dS_i = [Hodge(d(si).subs(dsubs)) for si in twoforms]
+                J1_star_dS_i = J1(star_dS_i,twoforms)
+                sigma = -Number(1) if self.signature == 1 else I
+                return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
+            elif method == "LA":
+                A1 = sum([symbols(rf"A^{{1}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
+                A2 = sum([symbols(rf"A^{{2}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
+                A3 = sum([symbols(rf"A^{{3}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
+                S1,S2,S3 = twoforms
 
-            eoms = ((d(S1).subs(dsubs)+A2*S3-A3*S2).simplify().factors)
-            eoms += ((d(S2).subs(dsubs)+A3*S1-A1*S3).simplify().factors)
-            eoms += ((d(S3).subs(dsubs)+A1*S2-A2*S1).simplify().factors)
+                eoms = ((d(S1).subs(dsubs)+A2*S3-A3*S2).simplify().factors)
+                eoms += ((d(S2).subs(dsubs)+A3*S1-A1*S3).simplify().factors)
+                eoms += ((d(S3).subs(dsubs)+A1*S2-A2*S1).simplify().factors)
 
-            a_sols = solve(eoms,A1.factors+A2.factors+A3.factors)
+                a_sols = solve(eoms,A1.factors+A2.factors+A3.factors)
 
-            return A1.subs(a_sols),A2.subs(a_sols),A3.subs(a_sols)
-        else:
-            raise NotImplementedError("Valid method not chosen")
+                self.self_dual_connections = A1.subs(a_sols),A2.subs(a_sols),A3.subs(a_sols)
+            else:
+                raise NotImplementedError("Valid method not chosen")
 
-    def get_spin_connection(self,frame=None,recompute=False):
+        return self.self_dual_connections
+
+    def get_spin_connection(self):
         """Computes the spin connection for a given frame in n-dimensions"""
-        if not recompute:
-            if self.spin_connection != None: return self.spin_connection
-        if frame == None:
-            if self.frame == None: raise NotImplementedError("Basis unknown, set Manifold basis or pass basis as argument")
-            frame = self.frame[:]
-        wIJ_K_symbols = Array([[[(+1 if I < J else -1)*symbols(fr"\omega^{{{min(I,J)}{max(I,J)}}}_{{{K}}}") if I!=J else 0 for K in range(self.dimension)] for J in range(self.dimension)] for I in range(self.dimension)]) # Get symbols for 
+        if self.spin_connection == None:
+            wIJ_K_symbols = Array([[[(+1 if I < J else -1)*symbols(fr"\omega^{{{min(I,J)}{max(I,J)}}}_{{{K}}}") if I!=J else 0 for K in range(self.dimension)] for J in range(self.dimension)] for I in range(self.dimension)])
+            η = eye(self.dimension)
+            if self.signature == -1: η[0,0] = -1
+            wI_J_K_symbols = Array([[[sum([wIJ_K_symbols[I,L,K]*η[L,J] for L in range(self.dimension)]) for K in range(self.dimension)] for J in range(self.dimension)] for I in range(self.dimension)])
 
-        η = eye(self.dimension)
-        if self.signature == -1: η[0,0] = -1
-        wI_J_K_symbols = Array([[[sum([wIJ_K_symbols[I,L,K]*η[L,J] for L in range(self.dimension)]) for K in range(self.dimension)] for J in range(self.dimension)] for I in range(self.dimension)])
+            spin_connection = [[sum([wI_J_K_symbols[I,J,K]*self.basis[K] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
 
-        spin_connection = [[sum([wI_J_K_symbols[I,J,K]*self.basis[K] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
+            frame = self.get_frame()
+            torsion_equations = [d(frame[I]) + sum([spin_connection[I][J]*frame[J] for J in range(self.dimension)]) for I in range(self.dimension)]
 
-        torsion_equations = [d(frame[I]) + sum([spin_connection[I][J]*frame[J] for J in range(self.dimension)]) for I in range(self.dimension)]
+            all_symbols = []
+            for I in range(self.dimension):
+                for J in range(I+1,self.dimension):
+                    for K in range(self.dimension):
+                        all_symbols.append(wIJ_K_symbols[I,J,K])
 
-        all_symbols = []
-        for I in range(self.dimension):
-            for J in range(I+1,self.dimension):
-                for K in range(self.dimension):
-                    all_symbols.append(wIJ_K_symbols[I,J,K])
+            all_equations = []
+            for eq in torsion_equations:
+                for fact in eq.factors:
+                    if fact != 0:
+                        all_equations.append(fact)
 
-        all_equations = []
-        for eq in torsion_equations:
-            for fact in eq.factors:
-                if fact != 0:
-                    all_equations.append(fact)
+            spin_comps_sol = solve(all_equations,all_symbols)
+            wI_J_K_symbols = wI_J_K_symbols.subs(spin_comps_sol)
 
-        spin_comps_sol = solve(all_equations,all_symbols)
-        wI_J_K_symbols = wI_J_K_symbols.subs(spin_comps_sol)
-
-        self.spin_connection = [[sum([wI_J_K_symbols[I,J,K]*self.basis[K] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
+            self.spin_connection = [[sum([wI_J_K_symbols[I,J,K]*self.basis[K] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
 
         return self.spin_connection
             
-    def get_selfdual_curvatures(self,connections,dsubs=None):
+    def get_self_dual_curvatures(self,connections,dsubs=None):
         """Returns the triple of self-dual curvatures, built from the self-dual connections. They are 2-forms.
 
         Arguments:
@@ -270,7 +281,9 @@ class Manifold():
             - List of 2-forms
 
         """
-        return [d(connections[i],self).subs(dsubs) + sum([int(LeviCivita(i,j,k))*connections[j]*connections[k] for j,k in drange(3,2)])*Number(1,2) for i in range(3)]
+        if self.self_dual_curvature == None:
+            self.self_dual_curvature = [d(connections[i],self).subs(dsubs) + sum([int(LeviCivita(i,j,k))*connections[j]*connections[k] for j,k in drange(3,2)])*Number(1,2) for i in range(3)]
+        return self.self_dual_curvature
 
     def get_spin_curvature(self,spin_connection=None):
         if spin_connection == None:
@@ -285,7 +298,6 @@ class Manifold():
 
         return self.spin_riemann
 
-
     def get_riemann_curvature_tensor(self):
         """Computes the Riemann Curvature Tensor from the Christofell symbols"""
         if self.riemann_curvature == None:
@@ -295,21 +307,21 @@ class Manifold():
             self.riemann_curvature = (R_UDDD - PermuteIndices(R_UDDD,(0,1,3,2))).simplify()
         return self.riemann_curvature
 
-    def get_selfdual_component_vector(self,twoform,selfdual):
+    def get_self_dual_component_vector(self,twoform,self_dual):
         """Returns a 3 vector of self-dual components given a general 2-form
 
         Arguments:
             - twoform(List[DifferentialFormMul]):  Generic 2-form of which the self-dual matrix will be returned.
-            - selfdual(List[DifferentialFormMul]): Triple of self-dual 2-forms.
+            - self_dual(List[DifferentialFormMul]): Triple of self-dual 2-forms.
         
         Returns:
             - Matrix of 3x3 components (Can be complex).
         """
         
         assert(twoform.get_degree() == 2)
-        assert([s.get_degree() for s in selfdual] == [2, 2, 2])
+        assert([s.get_degree() for s in self_dual] == [2, 2, 2])
 
-        volSD = sum([s*s for s in selfdual]).get_factor(0)/(1 if selfdual[0].manifold.signature == 1 else I)
+        volSD = sum([s*s for s in self_dual]).get_factor(0)/(1 if self_dual[0].manifold.signature == 1 else I)
         return [(twoform*s).get_factor(0)/(2*volSD) for s in twoforms]
 
     def get_metric_determinant(self):
@@ -318,13 +330,7 @@ class Manifold():
         Returns:
             - Scalar (numpy expression) that is the determinant.
         """
-        assert(self.vectors != None)
-        assert(self.frame != None)
-        detg = 1
-        for e in self.frame:
-            detg = detg*e
-        
-        return -detg.get_factor(0)**2
+        return self.signature*self.get_volume()**2
 
     def get_urbantke_metric(self,twoforms):
         S_i = S1,S2,S3 = twoforms
@@ -333,7 +339,7 @@ class Manifold():
 
         sqrtdetg = simplify(sum([s*s for s in S_i]).get_factor(0))
 
-        if sqrtdetg == 0: return 0
+        if sqrtdetg == 0: return Number(0)
 
         Epsilon4D = sum([LeviCivita(u,v,r,s)*self.vectors[u]*self.vectors[v]*self.vectors[r]*self.vectors[s] for u,v,r,s in drange(4,4)])
 
@@ -346,7 +352,7 @@ class Manifold():
 class VectorField():
     """Class VectorField
 
-    Symbolic single term vector representation.
+    Symbolic vector basis object representation.
 
     Attributes:
         - symbol(Symbol): The symbol with which the derivative of the vector field will be taken. 
@@ -403,13 +409,13 @@ class VectorField():
         ret = Tensor(self.manifold)
         ret.comps_list = [[self]]
         ret.factors = [1]
-        if isinstance(self,(int,float,AtomicExpr,Expr)):
+        if isinstance(self,(int,float,Expr)):
             if other != 0:
                 ret.comps_list.append([1])
                 ret.factors.append(other)
         elif isinstance(other,(VectorField,DifferentialForm)):
             ret.comps_list.append([other])
-            ret.factors(1)
+            ret.factors.append(1)
         elif isinstance(other,DifferentialFormMul):
             return self + other.to_tensor()
         elif isinstance(other,Tensor):
@@ -433,6 +439,19 @@ class VectorField():
 
         # For some reason latex(symbol) doesn't work here in my implementation, need to see why.
         return fr"\partial_{{{str(self.symbol)}}}"
+
+    def __call__(self,func):
+        """ Applies basis vector on function """
+        if isinstance(func,(int,float)):
+            return Number(0)
+        elif isinstance(func,Expr):
+            res = func.diff(self.symbol)
+            return (res if isinstance(res,Expr) else Number(res))
+        elif isinstance(func,DifferentialForm):
+            res = func(self)
+            return (res if isinstance(res,Expr) else Number(res))
+        else:
+            raise NotImplementedError("Basis Vector can only act on functions.")
 
     def conjugate(self):
         """Returns the complex conjugate of the VectorField. """
@@ -575,6 +594,10 @@ class Tensor():
             if current_weight != first_weight: return (None)
         return first_weight
 
+    def get_weights_list(self):
+        """ Returns the "weights" for each additive term """
+        return [tuple(map(lambda x: int(isinstance(x,VectorField))-int(isinstance(x,DifferentialForm)),self.comps_list[i])) for i in range(len(self.factors))]
+
     def get_component(self,i:int):
         """Get the i-th component in the order that the factors list in in. """
         return self.factors[i]
@@ -705,7 +728,7 @@ class Tensor():
         Returns:
             Scalar that is the factor.
         """
-        if len(self.factors) == 0: return 0
+        if len(self.factors) == 0: return Number(0)
         return self.factors[index]
     
     def simplify(self):
@@ -880,6 +903,9 @@ class DifferentialForm():
         """Unique hash for a DifferentialForm. """
         return hash((self.symbol,self.get_degree()))
 
+    def __call__(self,vect):
+        return self.insert(vect)
+
     def to_tensor(self):
         """Converts a DifferentialForm to a Tensor, such that multiplication uses the TensorProduct instead of WedgeProduct. """
         return (Number(1)*self).to_tensor()
@@ -908,7 +934,7 @@ class DifferentialForm():
             Contraction of the DifferentialForm and VectorField as a Scalar.
         """
         if isinstance(vector,VectorField):
-            if self.symbol == vector.symbol or str(self.symbol) == "d\\left("+str(vector.symbol)+"\\right)": return 1
+            if self.symbol == vector.symbol or str(self.symbol) == "d\\left("+str(vector.symbol)+"\\right)": return Number(1)
             else: return Number(0)
         elif isinstance(vector,Tensor):
             if vector.is_vectorfield():
@@ -928,8 +954,8 @@ class DifferentialForm():
 
         """
 
-        if self.exact: return 0
-        elif isinstance(self.symbol,Number): return 0
+        if self.exact: return Number(0)
+        elif isinstance(self.symbol,Number): return Number(0)
         else:
             dsymbol = symbols(r"d\left("+str(self.symbol)+r"\right)",**self.symbol.assumptions0)
             return DifferentialForm(self.manifold,dsymbol,degree=self.get_degree()+1,exact=True)
@@ -1020,7 +1046,7 @@ class DifferentialFormMul():
         ret.sort_form_sums()
         ret.collect_forms()
 
-        if ret.factors == [] and ret.forms_list == []: return 0
+        if ret.factors == [] and ret.forms_list == []: return Number(0)
         elif ret.forms_list == [[]]: return ret.factors[0]
         return ret
     
@@ -1177,7 +1203,7 @@ class DifferentialFormMul():
 
     def get_factor(self,index):
         """Returns the factor at the index give, factors are in an arbitrary order. """
-        if len(self.factors) == 0: return 0
+        if len(self.factors) == 0: return Number(0)
         return self.factors[index]
 
     def get_degree(self):
@@ -1194,8 +1220,11 @@ class DifferentialFormMul():
         if self.forms_list == []:
             if len(self.factors) == 1: return self.factors[0]
             else:
-                return 0
+                return Number(0)
         return None
+    
+    def __call__(self,vect):
+        return self.insert(vect)
     
     _sympystr = _repr_latex_
     __str__ = _repr_latex_
@@ -1361,7 +1390,7 @@ class DifferentialFormMul():
             f = self.forms_list[i]
             if f == basis_comp:
                 return self.factors[i]
-        return 0
+        return Number(0)
 
     def simplify(self):
         """ Returns the simplification of a differential form. """
@@ -1478,12 +1507,12 @@ def constants(names:str, **assumptions)->symbols:
     if len(consts) == 1: return consts[0]
     return consts
 
-def d(form,manifold=None):
+def ExteriorDerivative(form,manifold=None):
     """Computes the exterior derivative of differential forms. """
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
         return form.d
     
-    elif isinstance(form,(AtomicExpr,Expr,Function)):
+    elif isinstance(form,Expr):
         if manifold == None: raise NotImplementedError("Manifold cannot be None for Scalar input")
         ret = DifferentialFormMul(manifold)
         new_forms_list = []
@@ -1499,16 +1528,16 @@ def d(form,manifold=None):
         if ret.forms_list == []:
             if len(ret.factors) == 1: return ret.factors[0]
             else:
-                return 0
+                return Number(0)
 
         return ret
 
     elif isinstance(form,(float,int)):
-        return 0
+        return Number(0)
 
     raise NotImplementedError
 
-def cod(form,manifold=None):
+def ExteriorCoDerivative(form,manifold=None):
     """Compute the codifferential operators on differential forms"""
     if isinstance(form,(DifferentialForm,DifferentialFormMul)):
         k = form.get_degree()
@@ -1524,7 +1553,7 @@ def PartialDerivative(tensor,manifold=None):
     if isinstance(tensor,(DifferentialForm,DifferentialFormMul)):
         return PartialDerivative((1*tensor).to_tensor(),manifold)
     elif isinstance(tensor,(VectorField)):
-        return 0
+        return Number(0)
     elif isinstance(tensor,(AtomicExpr,Expr,Function)):
         if manifold == None: raise NotImplementedError("Manifold cannot be None for Scalar input")
         ret = Tensor(manifold)
@@ -1542,7 +1571,7 @@ def PartialDerivative(tensor,manifold=None):
                 ret.factors += [diff(tensor.factors[j],man.coords[i])]
         ret._collect_comps()
         return ret
-    return 0
+    return Number(0)
 
 def CovariantDerivative(tensor,manifold=None):
     """Computes the covariant derivative, with respect to the metric, on the manifold provided. """
@@ -1580,7 +1609,7 @@ def WedgeProduct(left,right,debug=False):
     if isinstance(left,(int,float,Number,AtomicExpr,Expr)):
         left = left if not isinstance(left,(int,float)) else Number(left)
         if left == 0:
-            return 0
+            return Number(0)
         if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
             right = right if not isinstance(right,(int,float)) else Number(right)
             return left*right
@@ -1597,7 +1626,7 @@ def WedgeProduct(left,right,debug=False):
     elif isinstance(left, DifferentialForm):
         ret = DifferentialFormMul(left.manifold)
         if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
-            if right == 0: return 0
+            if right == 0: return Number(0)
             ret.forms_list = [[left]]
             ret.factors = [right if not isinstance(right,(int,float)) else Number(right)]
         elif isinstance(right,DifferentialForm):
@@ -1614,7 +1643,7 @@ def WedgeProduct(left,right,debug=False):
         ret = DifferentialFormMul(left.manifold)
         if isinstance(right,(int,float,Number,AtomicExpr,Expr)):
             if right == 0:
-                return 0
+                return Number(0)
             ret.forms_list = left.forms_list
             right = right if not isinstance(right,(int,float)) else Number(right)
             ret.factors = [right*f for f in left.factors]
@@ -1649,7 +1678,7 @@ def TensorProduct(left,right):
     ret = None
     if isinstance(left,(int,float,AtomicExpr,Expr)):
         left = left if not isinstance(left,(int,float)) else Number(left)
-        if left == 0: return 0
+        if left == 0: return Number(0)
         if isinstance(right,(int,float,AtomicExpr,Expr)):
             right = right if not isinstance(right,(int,float)) else Number(right)
             return left*right
@@ -1666,7 +1695,7 @@ def TensorProduct(left,right):
     elif isinstance(left,VectorField):
         ret = Tensor(left.manifold)
         if isinstance(right,(int,float,AtomicExpr,Expr)):
-            if right == 0: return 0
+            if right == 0: return Number(0)
             ret.comps_list = [[left]]
             ret.factors = [right if not isinstance(right,(int,float)) else Number(right)]
         elif isinstance(right,(DifferentialForm,VectorField)):
@@ -1682,7 +1711,7 @@ def TensorProduct(left,right):
     elif isinstance(left,DifferentialForm):
         ret = Tensor(left.manifold)
         if isinstance(right,(int,float,AtomicExpr,Expr)):
-            if right == 0: return 0
+            if right == 0: return Number(0)
             ret.comps_list = [[left]]
             ret.factors = [right if not isinstance(right,(int,float)) else Number(right)]
         elif isinstance(right,(DifferentialForm,VectorField)):
@@ -1698,7 +1727,7 @@ def TensorProduct(left,right):
     elif isinstance(left,Tensor):
         ret = Tensor(left.manifold)
         if isinstance(right,(int,float,AtomicExpr,Expr)):
-            if right == 0: return 0
+            if right == 0: return Number(0)
             ret.comps_list = left.comps_list.copy()
             right = Number(right) if isinstance(right,(int,float)) else right
             ret.factors = [right*f for f in left.factors]
@@ -1720,15 +1749,15 @@ def TensorProduct(left,right):
     ret._collect_comps()
 
     if ret.comps_list == [[]] or ret.comps_list == []:
-        return 0 if ret.factors == [] else ret.factors[0]
+        return Number(0) if ret.factors == [] else ret.factors[0]
     return ret
 
 def Contract(tensor,*positions):
     """Contract two tensors, given a list of pairs of indices to contract. Contraction must be between a differential form and vector field. """
-    if isinstance(tensor,(int,float,Number)): return tensor
+    if isinstance(tensor,(int,float,Expr)): return tensor
     elif not isinstance(tensor,Tensor): raise TypeError("First argument must be a Tensor.")
     if tensor.comps_list == [[]] or tensor.comps_list == []:
-        return 0 if tensor.factors == [] else  tensor.factors[0]
+        return Number(0) if tensor.factors == [] else  tensor.factors[0]
     tensor_weight = tensor.get_weight()
     if tensor_weight == (None): raise TypeError("Tensors must be of consistent types")
     p1_list = []
@@ -1784,21 +1813,23 @@ def LieDerivative(vector,tensor):
     if not isinstance(vector,(Tensor,VectorField)): raise TypeError("First argument for the Lie derivative must be a vector")
     if isinstance(vector,Tensor) and vector.get_weight() != (1,): return TypeError("First argument for the Lie derivative must be a vector")
     if isinstance(tensor,(DifferentialFormMul,DifferentialForm)):
-        return d(tensor.insert(vector),tensor.manifold) + d(tensor).insert(vector)
+        ExtDTensor = ExteriorDerivative(tensor)
+        return ExteriorDerivative(tensor.insert(vector),tensor.manifold) + (Number(0) if ExtDTensor == 0 else ExtDTensor.insert(vector))
     elif isinstance(tensor,VectorField):
-        return 0
+        return Number(0)
     elif isinstance(tensor,Tensor): # %TODO: Fix Lie Derivative 
         LieD_tensor = Contract(vector*PartialDerivative(tensor),(0,1))
         PDvector = PartialDerivative(vector)
         if PDvector == 0: return LieD_tensor
+        tensor_weights = tensor.get_weights_list()
         for I in range(len(tensor.factors)):
             for i in range(len(tensor.comps_list[I])):
-                sign = 1 if isinstance(tensor.comps_list[I][i],DifferentialForm) else -1
+                sign = -tensor_weights[I][i]
                 new_indices = list(range(len(tensor.comps_list[I])))
                 j = len(tensor.comps_list[I]) + (1 if sign == 1 else 2)
                 new_indices[i] = j-2
                 new_indices[j-2] = i
-                LieD_tensor += sign*PermuteIndices(Contract(tensor.get_component(I)*PDvector,(i,j)),new_indices)
+                LieD_tensor += sign*PermuteIndices(Contract(PDvector*tensor.get_component(I),(i,j)),new_indices)
         return LieD_tensor
     raise NotImplementedError("Only the Tensor class and the Differential form class can be acted on by the LieDerivative")
 
@@ -1855,6 +1886,17 @@ def Hodge(form : DifferentialFormMul,M=None,orientation=1) -> DifferentialFormMu
             ret = ret + ret_term
     return ret
 
+def GetChristoffelSymbols(metric,vectors):
+    if isinstance(metric,Tensor) and metric.get_weight() == (-1,-1): pass
+    else: raise NotImplementedError("Arugment: 'metric' must by a tensor of weight (-1,-1).")
+    dimension = len(vectors)
+    metric_matrix_inv = Matrix([[Contract(metric*u*v,(0,2),(1,3)) for v in vectors] for u in vectors]).inv()
+    metric_UU = sum([sum([metric_matrix_inv[i,j]*vectors[i]*vectors[j] for j in range(dimension)]) for i in range(dimension)])
+    T_DDD = PartialDerivative(metric)
+    g_UU_T_DDD = (metric_UU*T_DDD)
+    Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
+    return simplify((Gamma_UDD_1 + PermuteIndices(Gamma_UDD_1,(0,2,1)) - Contract(g_UU_T_DDD,(1,2)))/Number(2)).simplify()
+
 def GetSpinCurvature(spin_connection,M):
     dim = M.dimension
     return [[d(spin_connection[I][J]) + sum([spin_connection[I][K]*spin_connection[K][J] for K in range(dim)]) for J in range(dim)] for I in range(dim)]
@@ -1879,23 +1921,26 @@ def J2(Bi,twoforms):
 
     return [sum([LeviCivita(i,j,k)*Contract(Si_DU*Bi_DD,(1,2)) for j,k in drange(3,2)]).to_differentialform()/Number(2) for i in range(3)]
 
-def dA(thetas,A_i,manifold=None):
+def ExteriorSO3GaugeDerivative(thetas,A_i,manifold=None):
     result = [d(thetas[i],manifold) + sum([LeviCivita(i,j,k)*A_i[j]*thetas[k] for j,k in drange(3,2)]) for i in range(3)]
     return result
 
-def codA(thetas,A_i,manifold=None):
+def ExteriorSO3GaugeCoDerivative(thetas,A_i,manifold=None):
     hodge_theta = [Hodge(t,manifold) for t in thetas]
     dA_hodge_theta = dA(hodge_theta,A_i,manifold)
     return [Hodge(t,manifold) for t in dA_hodge_theta]
 
-def GetSelfDualTwoForm(frame,orientation=1,signature=1):
+def GetSelf_DualTwoForm(frame,orientation=1,signature=1):
     assert(len(frame)==4)
 
     sigma = 1 if signature == 1 else I
     return [frame[0]*frame[i+1]*sigma-sum([int(LeviCivita(i,j,k))*frame[j+1]*frame[k+1] for j,k in drange(3,2)])*orientation/Number(2) for i in range(3)]
 
-def GetSelfDualConnections(twoforms,signature=1,orientation=1):
+def GetSelf_DualConnections(twoforms,signature=1,orientation=1):
     star_dS_i = [Hodge(d(si)) for si in twoforms]
     J1_star_dS_i = J1(star_dS_i,twoforms)
     sigma = Number(1) if signature == 1 else I
     return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
+
+def GetSO3Curvature(connections):
+    return [connections[i] + Number(1,2)*sum([LeviCivita(i,j,k)*connections[j]*connections[k] for j,k in drange(3,2)]) for i in range(3)]
