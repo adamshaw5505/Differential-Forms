@@ -217,7 +217,7 @@ class Manifold():
         if self.self_dual_connections == None:
             twoforms = self.get_self_dual_twoforms(orientation)
             if method == "H":
-                star_dS_i = [Hodge(d(si).subs(dsubs)) for si in twoforms]
+                star_dS_i = [Hodge(ExteriorDerivative(si).subs(dsubs)) for si in twoforms]
                 J1_star_dS_i = J1(star_dS_i,twoforms)
                 sigma = -Number(1) if self.signature == 1 else I
                 return [orientation*sigma/Number(2)*(J1_star_dS_i[i] - orientation*star_dS_i[i]) for i in range(3)]
@@ -227,9 +227,9 @@ class Manifold():
                 A3 = sum([symbols(rf"A^{{3}}_{{{I}}}")*self.basis[I] for I in range(self.dimension)])
                 S1,S2,S3 = twoforms
 
-                eoms = ((d(S1).subs(dsubs)+A2*S3-A3*S2).simplify().factors)
-                eoms += ((d(S2).subs(dsubs)+A3*S1-A1*S3).simplify().factors)
-                eoms += ((d(S3).subs(dsubs)+A1*S2-A2*S1).simplify().factors)
+                eoms = ((ExteriorDerivative(S1).subs(dsubs)+A2*S3-A3*S2).simplify().factors)
+                eoms += ((ExteriorDerivative(S2).subs(dsubs)+A3*S1-A1*S3).simplify().factors)
+                eoms += ((ExteriorDerivative(S3).subs(dsubs)+A1*S2-A2*S1).simplify().factors)
 
                 a_sols = solve(eoms,A1.factors+A2.factors+A3.factors)
 
@@ -250,7 +250,7 @@ class Manifold():
             spin_connection = [[sum([wI_J_K_symbols[I,J,K]*self.basis[K] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
 
             frame = self.get_frame()
-            torsion_equations = [d(frame[I]) + sum([spin_connection[I][J]*frame[J] for J in range(self.dimension)]) for I in range(self.dimension)]
+            torsion_equations = [ExteriorDerivative(frame[I]) + sum([spin_connection[I][J]*frame[J] for J in range(self.dimension)]) for I in range(self.dimension)]
 
             all_symbols = []
             for I in range(self.dimension):
@@ -271,7 +271,7 @@ class Manifold():
 
         return self.spin_connection
             
-    def get_self_dual_curvatures(self,connections,dsubs=None):
+    def get_self_dual_curvatures(self,dsubs=None):
         """Returns the triple of self-dual curvatures, built from the self-dual connections. They are 2-forms.
 
         Arguments:
@@ -282,7 +282,8 @@ class Manifold():
 
         """
         if self.self_dual_curvature == None:
-            self.self_dual_curvature = [d(connections[i],self).subs(dsubs) + sum([int(LeviCivita(i,j,k))*connections[j]*connections[k] for j,k in drange(3,2)])*Number(1,2) for i in range(3)]
+            connections = self.get_self_dual_connections()
+            self.self_dual_curvature = [ExteriorDerivative(connections[i],self).subs(dsubs) + sum([int(LeviCivita(i,j,k))*connections[j]*connections[k] for j,k in drange(3,2)])*Number(1,2) for i in range(3)]
         return self.self_dual_curvature
 
     def get_spin_curvature(self,spin_connection=None):
@@ -294,7 +295,7 @@ class Manifold():
         if self.spin_riemann != None:
             return self.spin_riemann
 
-        self.spin_riemann = [[d(spin_connection[I][J]) + sum([spin_connection[I][K]*spin_connection[K][J] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
+        self.spin_riemann = [[ExteriorDerivative(spin_connection[I][J]) + sum([spin_connection[I][K]*spin_connection[K][J] for K in range(self.dimension)]) for J in range(self.dimension)] for I in range(self.dimension)]
 
         return self.spin_riemann
 
@@ -601,6 +602,12 @@ class Tensor():
     def get_component(self,i:int):
         """Get the i-th component in the order that the factors list in in. """
         return self.factors[i]
+
+    def get_sub_tensor(self,index:int):
+        ret = Tensor(self.manifold)
+        ret.factors = [self.factors[index]]
+        ret.comps_list = [self.comps_list[index]]
+        return ret
 
     def _collect_comps(self):
 
@@ -1811,25 +1818,26 @@ def PermuteIndices(tensor,new_order):
 def LieDerivative(vector,tensor):
     """Compute the Lie derivative of a tensor given a vector field. """
     if not isinstance(vector,(Tensor,VectorField)): raise TypeError("First argument for the Lie derivative must be a vector")
-    if isinstance(vector,Tensor) and vector.get_weight() != (1,): return TypeError("First argument for the Lie derivative must be a vector")
+    if isinstance(vector,Tensor) and not vector.is_vectorfield(): return TypeError("First argument for the Lie derivative must be a vector")
     if isinstance(tensor,(DifferentialFormMul,DifferentialForm)):
         ExtDTensor = ExteriorDerivative(tensor)
         return ExteriorDerivative(tensor.insert(vector),tensor.manifold) + (Number(0) if ExtDTensor == 0 else ExtDTensor.insert(vector))
     elif isinstance(tensor,VectorField):
-        return Number(0)
-    elif isinstance(tensor,Tensor): # %TODO: Fix Lie Derivative 
+        return -sum([tensor(vector.factors[i])*vector.comps_list[i][0] for i in range(len(vector.factors))])
+    elif isinstance(tensor,Tensor):
         LieD_tensor = Contract(vector*PartialDerivative(tensor),(0,1))
         PDvector = PartialDerivative(vector)
         if PDvector == 0: return LieD_tensor
         tensor_weights = tensor.get_weights_list()
         for I in range(len(tensor.factors)):
+            term = tensor.get_sub_tensor(I)
             for i in range(len(tensor.comps_list[I])):
                 sign = -tensor_weights[I][i]
                 new_indices = list(range(len(tensor.comps_list[I])))
-                j = len(tensor.comps_list[I]) + (1 if sign == 1 else 2)
+                j = len(tensor.comps_list[I]) + (1 if sign == 1 else 0)
                 new_indices[i] = j-2
                 new_indices[j-2] = i
-                LieD_tensor += sign*PermuteIndices(Contract(PDvector*tensor.get_component(I),(i,j)),new_indices)
+                LieD_tensor += sign*PermuteIndices(Contract(term*PDvector,(i,j)),new_indices)
         return LieD_tensor
     raise NotImplementedError("Only the Tensor class and the Differential form class can be acted on by the LieDerivative")
 
