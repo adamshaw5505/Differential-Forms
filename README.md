@@ -26,6 +26,7 @@ This is the list of possible implementation, in an approximate order of priority
 - [ ] Fallback to symbolic Hodge star without basis (or if form isn't in basis)
 - [ ] Solving 1-form simple linear equations
 - [ ] Vector Field Commutator
+- [ ] Separate G-Structure Commands into separate files/subfolders
 
 Dependencies
 ============
