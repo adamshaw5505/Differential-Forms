@@ -15,6 +15,7 @@ from math import factorial, prod
 _PRINT_ARGUMENTS = False
 
 # TODO:
+# - Check SO(3) functions still work the way I expect them too with the signature changes
 
 def drange(n,d,repetition=True): return variations(range(n),d,repetition)
 

@@ -36,9 +36,9 @@ def GetSU2Structures(frame : list[DifferentialFormMul], orientation : int = 1, s
         signature = frame[0].manifold.signature
 
     sig_prod = prod(signature)
-    eta = diag(signature[1:])
+    eta = diag(*signature[1:])
     sigma = 1 if sig_prod == 1 else I
-    return [sigma*frame[0]*frame[i+1]+Number(orientation*signature[0],2)*sum([eta(i,l)*LeviCivita(l,j,k)*frame[j+1]*frame[k+1] for j,k in drange(3,2)]) for i in range(3)]
+    return [sigma*frame[0]*frame[i+1]+Number(orientation*signature[0],2)*sum([eta[i,l]*LeviCivita(l,j,k)*frame[j+1]*frame[k+1] for l,j,k in drange(3,3)]) for i in range(3)]
 
 def GetSU2Connections(twoforms : list[DifferentialForm], signature : list[int] = [1,1,1,1], orientation : int = 1) -> list[DifferentialFormMul]:
     """ Computes the connections (or torsion) for a given SU(2) structure """
