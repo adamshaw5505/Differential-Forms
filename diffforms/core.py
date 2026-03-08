@@ -15,7 +15,7 @@ from math import factorial, prod
 _PRINT_ARGUMENTS = False
 
 # TODO:
-# - Check SO(3) functions still work the way I expect them too with the signature changes
+# - Add functions that construct the Einstein tensor and the intermediate tensors needed along the way
 
 def drange(n,d,repetition=True): return variations(range(n),d,repetition)
 
@@ -62,6 +62,9 @@ class Manifold():
         self.metric_inv          = None
         self.christoffel_symbols = None
         self.riemann_curvature   = None
+        self.ricci_curvature     = None
+        self.ricci_scalar        = None
+        self.einstein_tensor     = None
         self.epsilon_tensor      = None
         self.volume              = None
         self.volume_form         = None
@@ -98,6 +101,7 @@ class Manifold():
         self.metric_inv          = None
         self.christoffel_symbols = None
         self.riemann_curvature   = None
+        self.einstein_tensor     = None
         self.epsilon_tensor      = None
         self.volume              = None
         self.volume_form         = None
@@ -222,6 +226,27 @@ class Manifold():
             R_UDDD = PermuteIndices(dG_DUDD,(1,3,0,2)) + PermuteIndices(Contract(G_UDD*G_UDD,(2,3)),(0,3,1,2))
             self.riemann_curvature = (R_UDDD - PermuteIndices(R_UDDD,(0,1,3,2))).simplify()
         return self.riemann_curvature
+
+    def get_ricci_curvature(self) -> Tensor:
+        if self.ricci_curvature == None:
+            R_UDDD = self.get_riemann_curvature_tensor()
+            self.ricci_curvature = CT(R_UDDD,(0,2))
+        return self.ricci_curvature
+
+    def get_ricci_scalar(self) -> Expr:
+        if self.ricci_scalar == None:
+            g_UU = self.get_inverse_metric()
+            R_DD = self.get_ricci_curvature()
+            self.ricci_scalar = CT(R_DD*g_UU,(0,2),(1,3))
+        return self.ricci_scalar
+
+    def get_einstein_tensor(self) -> Tensor:
+        if self.einstein_tensor == None:
+            R_DD = self.get_ricci_curvature()
+            R    = self.get_ricci_scalar()
+            g_DD = self.get_metric()
+            self.einstein_tensor = R_DD - Number(1,2)*g_DD*R
+        return self.einstein_tensor
 
     def get_metric_determinant(self) -> Expr:
         """Returns the determinant of the metric.
@@ -1501,6 +1526,14 @@ def WedgeProduct(left : DifferentialFormMul | DifferentialForm, right : Differen
         ret.factors = [Number(0)]
         ret.forms_list = [[]]
     return ret
+
+def MetricWedgeProduct(left : DifferentialFormMul | DifferentialForm, right : DifferentialFormMul | DifferentialForm) -> DifferentialFormMul:
+    """ Computes the Wedge product after a single contraction using the metric """
+    man         = left.manifold
+    frame_vects = man.get_inverse_frame()   
+    sign        = man.signature
+
+    return sum([sign[I]*left(frame_vects[I])*right(frame_vects[I]) for I in range(man.dimension)])
 
 def TensorProduct(left : Tensor, right : Tensor) -> Tensor:
     """Tensor product of two objects on the same manifold. """
