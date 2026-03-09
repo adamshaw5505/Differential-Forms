@@ -219,26 +219,32 @@ class Manifold():
         return self.epsilon_tensor
 
     def get_riemann_curvature_tensor(self) -> Tensor :
-        """Computes the Riemann Curvature Tensor from the Christofell symbols"""
+        """Computes the Riemann Curvature Tensor from the Christoffel symbols"""
         if self.riemann_curvature == None:
             G_UDD = self.get_christoffel_symbols()
             dG_DUDD = PartialDerivative(G_UDD)
             R_UDDD = PermuteIndices(dG_DUDD,(1,3,0,2)) + PermuteIndices(Contract(G_UDD*G_UDD,(2,3)),(0,3,1,2))
-            self.riemann_curvature = (R_UDDD - PermuteIndices(R_UDDD,(0,1,3,2))).simplify()
+            self.riemann_curvature = (R_UDDD - PermuteIndices(R_UDDD,(0,1,3,2)))
         return self.riemann_curvature
 
     def get_ricci_curvature(self) -> Tensor:
         if self.ricci_curvature == None:
             R_UDDD = self.get_riemann_curvature_tensor()
-            self.ricci_curvature = CT(R_UDDD,(0,2))
+            self.ricci_curvature = Contract(R_UDDD,(0,2))
         return self.ricci_curvature
 
     def get_ricci_scalar(self) -> Expr:
         if self.ricci_scalar == None:
             g_UU = self.get_inverse_metric()
             R_DD = self.get_ricci_curvature()
-            self.ricci_scalar = CT(R_DD*g_UU,(0,2),(1,3))
+            self.ricci_scalar = Contract(R_DD*g_UU,(0,2),(1,3))
         return self.ricci_scalar
+
+    def get_einstein_tensor(self) -> Tensor:
+        R_DD = self.get_ricci_curvature()
+        R = self.get_ricci_scalar()
+        g_DD = self.get_metric()
+        return R_DD - Number(1,2)*R*g_DD
 
     def get_einstein_tensor(self) -> Tensor:
         if self.einstein_tensor == None:
@@ -1723,11 +1729,28 @@ def FormsListInBasisMatrix(formslist : dict, basis : DifferentialForm = None) ->
     return_matrix = form_matrix*basis_comp_matrix_inv
 
     return return_matrix
-    
+
+def Rank2TensorInverse(tensor : Tensor) -> Tensor:
+    """ Computes the inverse of a rank-2 tensor with any index structure """
+    weight = tensor.get_weight()
+    assert(len(weight) == 2)
+    man = tensor.manifold
+    basis_vects = [man.get_basis(), man.get_vectors()]
+    left  = basis_vects[-weight[0]]
+    right = basis_vects[-weight[1]]
+    component_array = [[0 for  _ in range(man.dimension)] for _ in range(man.dimension)]
+    for I in range(man.dimension):
+        for J in range(I,man.dimension):
+            component_array[I][J] = Contract(tensor*left[I]*right[J],(0,2),(1,3))
+    components_matrix = Matrix(component_array)
+    matrix_inv = components_matrix.inv()
+    ret = sum([matrix_inv[I,J]*left[I]*right[J] for I,J in drange(man.dimension,2)])
+    return ret
+
 def Hodge(form : DifferentialFormMul, M : Manifold = None,orientation : int = 1) -> DifferentialFormMul:
-    """Computes the hodge star of a differntial form given the corresponding manifold has a metric and basis 1-forms defined. """
+    """Computes the hodge star of a differential form given the corresponding manifold has a metric and basis 1-forms defined. """
     if isinstance(form,(int,float,Expr)):
-        if M == None: raise(TypeError("Manfold must be specified for Hodge Dual of a Scalar"))
+        if M == None: raise(TypeError("Manifold must be specified for Hodge Dual of a Scalar"))
         return -orientation*M.signature_prod*form*M.get_volume_form()
     
     if form.manifold.coords == None:
@@ -1755,15 +1778,53 @@ def Hodge(form : DifferentialFormMul, M : Manifold = None,orientation : int = 1)
 
 def GetChristoffelSymbols(metric : Tensor, vectors : list[VectorField]) -> Tensor:
     if isinstance(metric,Tensor) and metric.get_weight() == (-1,-1): pass
-    else: raise NotImplementedError("Arugment: 'metric' must by a tensor of weight (-1,-1).")
-    dimension = len(vectors)
-    metric_matrix_inv = Matrix([[Contract(metric*u*v,(0,2),(1,3)) for v in vectors] for u in vectors]).inv()
-    metric_UU = sum([sum([metric_matrix_inv[i,j]*vectors[i]*vectors[j] for j in range(dimension)]) for i in range(dimension)])
+    else: raise NotImplementedError("Argument: 'metric' must by a tensor of weight (-1,-1).")
+    if vectors == None:
+        vectors = metric.manifold.get_vectors()
+    metric_UU = Rank2TensorInverse(metric)
     T_DDD = PartialDerivative(metric)
-    g_UU_T_DDD = (metric_UU*T_DDD)
+    g_UU_T_DDD = metric_UU*T_DDD
     Gamma_UDD_1 = Contract(g_UU_T_DDD,(1,3))
     return simplify((Gamma_UDD_1 + PermuteIndices(Gamma_UDD_1,(0,2,1)) - Contract(g_UU_T_DDD,(1,2)))/Number(2)).simplify()
 
+def GetRiemannCurvature(metric : Tensor = None, christoffel_symbols : Tensor = None, vectors : Tensor = None) -> Tensor:
+    if metric != None:
+        if christoffel_symbols == None:
+            christoffel_symbols = GetChristoffelSymbols(vectors,metric)
+    else:
+        if christoffel_symbols == None:
+            raise(NotImplementedError("Either metric or christoffel symbols must be supplied to compute Riemann curvature"))
+    
+    christoffel_symbols = self.get_christoffel_symbols()
+    dG = PartialDerivative(christoffel_symbols)
+    Riemann = PermuteIndices(dG,(1,3,0,2)) + PermuteIndices(Contract(christoffel_symbols*christoffel_symbols,(2,3)),(0,3,1,2))
+    return (Riemann - PermuteIndices(Riemann,(0,1,3,2)))
+
+def GetRicciCurvature(metric : Tensor = None, christoffel_symbols : Tensor = None, riemann_tensor : Tensor = None) -> Tensor:
+    if riemann_tensor == None:
+        riemann_tensor = GetRiemannCurvature(metric,christoffel_symbols)
+    else:
+        raise NotImplementedError("Metric, Christoffel Symbols or Riemann tensor are not provided.")
+    return Contract(riemann_tensor,(0,2))
+
+def GetRicciScalar(metric : Tensor = None, christoffel_symbols : Tensor = None, riemann_tensor : Tensor = None, ricci_curvature : Tensor = None) -> Tensor:
+    if metric == None:
+        raise NotImplementedError("Metric needs to be provided to compute trace of curvature")
+    metric_inverse = Rank2TensorInverse(metric)
+    if ricci_curvature == None:
+        ricci_curvature = GetRicciCurvature(metric=metric,christoffel_symbols=christoffel_symbols,riemann_tensor=riemann_tensor)
+    return Contract(ricci_curvature*metric_inverse,(0,2),(1,3))
+
+def GetEinsteinTensor(metric : Tensor = None, christoffel_symbols : Tensor = None, riemann_tensor : Tensor = None, ricci_curvature : Tensor = None, ricci_scalar : Expr = None) -> Tensor:
+    if metric == None:
+        return NotImplementedError("Metric needed to compute Einstein tensor")
+    if ricci_scalar == None:        
+        ricci_scalar = GetRicciScalar(metric=metric,riemann_tensor=riemann_tensor,ricci_curvature=ricci_curvature)
+    if ricci_curvature == None:
+        ricci_curvature = GetRicciCurvature(metric=metric,christoffel_symbols=christoffel_symbols,riemann_tensor=riemann_tensor)
+    
+    return ricci_curvature - Number(1,2)*metric*ricci_scalar
+    
 def GetSpinConnection(frame : list[DifferentialFormMul]) -> list[list[DifferentialFormMul]]:
     man = frame.manifold
     sig = man.signature

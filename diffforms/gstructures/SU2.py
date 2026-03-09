@@ -86,3 +86,27 @@ def GetSU2LieAlgebraFromTwoForm(twoform : DifferentialFormMul, su2_structure : l
 
         volSD = sum([s*s for s in su2_structure]).factors[0]/(1 if su2_structure[0].manifold.signature_prod == 1 else I)
         return [(twoform*s).factors[0]/(2*volSD) for s in su2_structure]
+
+def GetSU2VectorIrreducibleFromTwoFormTriple(twoforms : DifferentialFormMul, su2_structure : list[DifferentialFormMul]) -> Tensor:
+    """ Return the vector irreducible components of a arbitrary triple of 2-forms """
+    su2_vol = sum([su2_structure[i]*su2_structure[i] for i in range(3)]).factors[0]
+    return [sum([LeviCivita(i,j,k)*twoforms[j]*su2_structure[k] for j,k in drange(3,2)]).factors[0]/su2_vol for i in range(3)]
+
+def GetSU2WeylIrreducibleFromTwoFormTriple(twoforms : DifferentialFormMul, su2_structure : list[DifferentialFormMul]) -> Tensor:
+    """ Returns the Weyl Matrix tensor part of an arbitrary triple of 2-forms """
+    su2_vol = sum([su2_structure[i]*su2_structure[i] for i in range(3)]).factors[0]
+    mat = Matrix([[(twoforms[i]*su2_structure[j]).factors[0]/su2_vol for j in range(3)] for i in range(3)])
+    mat = (mat + mat.T)/Number(2) - Number(1,3)*mat.trace()*eye(3)
+    return list(mat)
+
+def GetSU2MetricIrreducibleFromTwoFormTriple(twoforms : DifferentialFormMul, su2_structure : list[DifferentialFormMul]) -> Tensor:
+    """ Returns the Metric tensor part of an arbitrary triple of 2-forms """
+    twoforms       = [t if isinstance(t,Tensor) else t.to_tensor() for t in twoforms]
+    su2_structure = [t if isinstance(t,Tensor) else t.to_tensor() for t in su2_structure]
+    metric = su2_structure[0].manifold.get_metric()
+    if metric == None:
+        metric = GetUrbantkeMetric(su2_structure)
+    metric_inverse = Rank2TensorInverse(metric)
+    return sum([Contract(su2_structure[i]*metric_inverse*twoforms[i],(1,2),(3,4)) for i in range(3)])
+
+
