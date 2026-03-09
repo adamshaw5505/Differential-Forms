@@ -9,3 +9,5 @@ diffforms.egg-info/SOURCES.txt
 diffforms.egg-info/dependency_links.txt
 diffforms.egg-info/requires.txt
 diffforms.egg-info/top_level.txt
+diffforms/gstructures/SU2.py
+diffforms/gstructures/Spin7.py

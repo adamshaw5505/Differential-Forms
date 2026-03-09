@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: diffforms
-Version: 0.1.33
+Version: 0.2.1
 Summary:  A symbolic differential form library with exterior calculus operations and sympy integration. Applications involve General Relativity and differentialform descriptions of Manifolds.
 Author: Adam Shaw
 Project-URL: Homepage, https://pypi.org/project/diffforms/
@@ -41,6 +41,7 @@ This is the list of possible implementation, in an approximate order of priority
 - [ ] Fallback to symbolic Hodge star without basis (or if form isn't in basis)
 - [ ] Solving 1-form simple linear equations
 - [ ] Vector Field Commutator
+- [ ] Separate G-Structure Commands into separate files/subfolders
 
 Dependencies
 ============
