@@ -1,6 +1,6 @@
 # TODO: Write Spin(7) version of SU(2) structure equations here, including natural operators that appear at this level
 
-def GetCayleyForm(frame : list[DifferentialFormMul]) -> list[DifferentialFormMul]:
+def GetCayleyForm(frame : list[DifferentialFormMul]) -> DifferentialFormMul:
 
      assert(len(frame)==8)
 
