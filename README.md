@@ -1,4 +1,4 @@
-Archied
+Archived
 =======
 
 The development for this project has moved to [codeberg](https://codeberg.org/adamshaw5505/Differential-Forms), this is a read-only copy made at the time of migration and will not recieve any more updates.
