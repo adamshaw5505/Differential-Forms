@@ -422,9 +422,9 @@ class Tensor():
             ret.factors += [Number(1)]
         elif isinstance(other,DifferentialFormMul):
             return self + other.to_tensor()
-        elif isinstance(other,float) or isinstance(other,int):
+        elif isinstance(other,(float,int)):
             if other != 0: ret = self + DifferentialForm(self.manifold,Rational(other),0)
-        elif isinstance(other,AtomicExpr):
+        elif isinstance(other,Expr):
             ret = self + DifferentialForm(self.manifold,other,0)
         else:
             raise NotImplementedError
@@ -1271,9 +1271,9 @@ class DifferentialFormMul():
                 return self.factors[i]
         return Number(0)
 
-    def simplify(self):
+    def simplify(self, **kwargs):
         """ Returns the simplification of a differential form. """
-        return self._eval_simplify()
+        return self._eval_simplify(**kwargs)
 
     def apply_func_to_factors(self, func, **kwargs) -> DifferentialFormMul:
         """ Evaluate a sympy function on the factors of a differential form. """
@@ -1288,8 +1288,8 @@ class DifferentialFormMul():
 
         return ret
 
-    def factor(self, **kwargs): return apply_func_to_factors(factor,kwargs)
-    def expand(self, **kwargs): return apply_func_to_factors(expand,kwargs)
+    def factor(self, **kwargs): return self.apply_func_to_factors(factor, **kwargs)
+    def expand(self, **kwargs): return self.apply_func_to_factors(expand, **kwargs)
 
     def conjugate(self):
         """Return the complex conjugate of a differential form. """
@@ -1404,10 +1404,10 @@ def ExteriorCoDerivative(form : DifferentialFormMul | DifferentialForm | Expr, m
         k = form.get_degree()
         n = form.manifold.dimension
         s = form.manifold.signature_prod
-        return (-1)**(n*(k+1)+1)*s*Hodge(d(Hodge(form,manifold),manifold),manifold)
+        return (-1)**(n*(k+1)+1)*s*Hodge(ExteriorDerivative(Hodge(form,manifold),manifold),manifold)
     n = manifold.dimension
     s = manifold.signature_prod
-    return (-1)**(n+1)*s*Hodge(d(Hodge(form,manifold),manifold),manifold)
+    return (-1)**(n+1)*s*Hodge(ExteriorDerivative(Hodge(form,manifold),manifold),manifold)
 
 def PartialDerivative(tensor : Tensor, manifold : Manifold = None) -> Tensor:
     """Computes the partial derivative of an object on the manifold provided. """
@@ -1704,7 +1704,7 @@ def LieDerivative(vector : Tensor | VectorField, tensor : Tensor | DifferentialF
                 new_indices[i] = j-2
                 new_indices[j-2] = i
                 LieD_tensor += sign*PermuteIndices(Contract(term*PDvector,(i,j)),new_indices)
-        return LieD_tensor + weight*DivVector
+        return LieD_tensor + weight*DivVector*tensor
     raise NotImplementedError("Only the Tensor class and the Differential form class can be acted on by the LieDerivative")
 
 def FormsListInBasisMatrix(formslist : dict, basis : DifferentialForm = None) -> Matrix:
