@@ -1,3 +1,9 @@
+Archied
+=======
+
+The development for this project has moved to [codeberg](https://codeberg.org/adamshaw5505/Differential-Forms), this is a read-only copy made at the time of migration and will not recieve any more updates.
+
+
 General
 =======
 The Diffform python package implements differential forms and poly-forms from differential geometry. It includes some usual operations found in exterior calculus, include exterior product, differential operator. The main advantage of this package over other differential form packages ( e.g. [pycartan](https://github.com/TUD-RST/pycartan) ) is that it allows for polyforms and there is no dependence on basis forms.
